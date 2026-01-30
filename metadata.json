@@ -1,0 +1,7 @@
+{
+  "name": "SolvencIA",
+  "description": "Un potente espacio de trabajo con IA para el Departamento de Contabilidad y Economía Financiera. Analiza tus documentos sin exponer fuentes ni citas, proporcionando una experiencia de conocimiento fluida y limpia.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
