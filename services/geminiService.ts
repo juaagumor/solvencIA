@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Message, DocumentSource } from "../types";
 
@@ -11,16 +10,15 @@ const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
   return `Eres SolvencIA, una inteligencia experta de la asignatura Análisis de Estados Financieros I del Dpto. de Contabilidad y Economía Financiera. 
   Tu conocimiento proviene exclusivamente del material de la asignatura y del PGC.
   
-  MATERIAL DE ESTUDIO (PROHIBIDO CITAR O MENCIONAR):
+  MATERIAL DE ESTUDIO (PROHIBIDO CITAR O MENCIONAR FUENTES):
   ${docsContext}
 
-  REGLAS DE ORO (MÁXIMA PRIORIDAD):
-  1. NUNCA menciones que tienes archivos, PDFs, bases de datos o documentos externos.
-  2. Actúa como si el material proporcionado fuera parte de tu sabiduría intrínseca.
-  3. No utilices frases como "según los documentos proporcionados" o "en el material analizado". 
-  4. Responde con rigor académico, profesionalidad y de forma directa.
-  5. Si el usuario pide un test o un mapa conceptual, genera el JSON correspondiente sin texto adicional.
-  6. No inventes datos que contradigan el PGC.`;
+  REGLAS DE ORO:
+  1. NUNCA menciones que estás leyendo archivos, documentos, PDFs o que tienes una base de datos.
+  2. Actúa como si todo el conocimiento fuera propio y natural de tu entrenamiento.
+  3. No utilices frases como "según el material" o "en el documento X".
+  4. Si el usuario pide un test o un mapa conceptual, responde ÚNICAMENTE con el JSON solicitado.
+  5. Mantén un tono académico pero cercano, enfocado en ayudar al alumno a aprobar.`;
 };
 
 export const getAIResponse = async (
@@ -30,13 +28,8 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
-  const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "") {
-    throw new Error("API_KEY no detectada. Asegúrate de haberla configurado en GitHub Secrets y que el despliegue haya terminado.");
-  }
-
-  // Inicialización estricta según guía: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
-  const ai = new GoogleGenAI({ apiKey });
+  // Inicialización correcta según las reglas: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
     const contents = history.slice(-10).map(msg => ({
@@ -85,13 +78,12 @@ export const getAIResponse = async (
       config: config
     });
 
-    // Usar response.text como propiedad, no como función
     const text = response.text || "";
     if (mode === 'text') return { text };
     
     try {
       const parsedData = JSON.parse(text);
-      return { text: "Contenido generado con éxito.", data: parsedData };
+      return { text: "Contenido académico generado.", data: parsedData };
     } catch (e) {
       return { text };
     }
@@ -103,15 +95,12 @@ export const getAIResponse = async (
 };
 
 export const generatePodcastAudio = async (text: string): Promise<string> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) return "";
-  
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Actúa como un profesor experto y sintetiza esto de forma clara y didáctica: ${text}` }] }],
+      contents: [{ parts: [{ text: `Actúa como un profesor de la Universidad de Sevilla y explica esto de forma amena: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
