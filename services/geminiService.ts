@@ -31,10 +31,11 @@ export const getAIResponse = async (
 ): Promise<{text: string, data?: any}> => {
   
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API_KEY no configurada. Por favor, añádela a los secretos de GitHub.");
+  if (!apiKey || apiKey === "") {
+    throw new Error("API_KEY no detectada. Asegúrate de haberla configurado en GitHub Secrets y que el despliegue haya terminado.");
   }
 
+  // Inicialización estricta según guía: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
   const ai = new GoogleGenAI({ apiKey });
 
   try {
@@ -84,12 +85,13 @@ export const getAIResponse = async (
       config: config
     });
 
+    // Usar response.text como propiedad, no como función
     const text = response.text || "";
     if (mode === 'text') return { text };
     
     try {
       const parsedData = JSON.parse(text);
-      return { text: "Contenido generado.", data: parsedData };
+      return { text: "Contenido generado con éxito.", data: parsedData };
     } catch (e) {
       return { text };
     }
