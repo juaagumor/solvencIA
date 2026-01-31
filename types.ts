@@ -22,12 +22,11 @@ export interface Message {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
-  type?: 'text' | 'quiz' | 'mindmap' | 'podcast' | 'image_infographic';
+  type?: 'text' | 'quiz' | 'mindmap' | 'podcast';
   data?: any;
 }
 
 export enum AppView {
-  WORKSPACE = 'workspace',
   CHATS = 'chats',
   ADMIN = 'admin'
 }

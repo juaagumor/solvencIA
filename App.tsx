@@ -1,25 +1,135 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Send, Sparkles, X, ShieldCheck, Database, Key, Trash2, Headphones, 
-  Award, Play, Volume2, FileText, Settings, GraduationCap, 
-  BarChart3, Landmark, Calculator, Image as ImageIcon,
-  GitGraph, PlusCircle, Copy, Check, ArrowLeft, AlertCircle
-} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { Message, AppView, DocumentSource, QuizQuestion, ConceptMap } from './types';
 import { getAIResponse, generatePodcastAudio } from './services/geminiService';
 import { PRIVATE_KNOWLEDGE_BASE } from './knowledge';
 
+// Iconos de Lucide
+import { 
+  Send as SendIcon, 
+  X as XIcon, 
+  Key as KeyIcon, 
+  Headphones as AudioIcon, 
+  Award as QuizIcon, 
+  Play as PlayIcon, 
+  Volume2 as SpeakerIcon, 
+  Settings as SettingsIcon, 
+  GitGraph as MindmapIcon, 
+  ArrowLeft as BackIcon, 
+  FileUp as UploadIcon, 
+  Loader2 as LoaderIcon, 
+  Check as CheckIcon, 
+  RefreshCw as SyncIcon 
+} from 'lucide-react';
+
+const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
+if (pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+const QuizViewer: React.FC<{ questions: QuizQuestion[] }> = ({ questions }) => {
+  const [currentAnswers, setCurrentAnswers] = useState<Record<number, number>>({});
+  const [showResults, setShowResults] = useState(false);
+
+  if (!questions || !Array.isArray(questions)) return <p className="text-red-400">Error cargando el test.</p>;
+
+  return (
+    <div className="space-y-6">
+      <h3 className="text-lg font-bold text-[#f9c80e] mb-4 flex items-center gap-2">
+        <QuizIcon size={20} /> Autoevaluación Académica
+      </h3>
+      {questions.map((q, idx) => (
+        <div key={idx} className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-3">
+          <p className="font-bold text-sm text-white">{idx + 1}. {q.question}</p>
+          <div className="grid gap-2">
+            {q.options.map((opt, optIdx) => (
+              <button
+                key={optIdx}
+                disabled={showResults}
+                onClick={() => setCurrentAnswers({ ...currentAnswers, [idx]: optIdx })}
+                className={`text-left p-3 rounded-xl text-xs transition-all border ${
+                  currentAnswers[idx] === optIdx 
+                    ? 'bg-[#a51d36] border-[#a51d36] text-white' 
+                    : 'bg-white/5 border-white/5 text-gray-400 hover:border-white/10'
+                } ${showResults && optIdx === q.correctAnswer ? 'ring-2 ring-green-500' : ''} ${
+                  showResults && currentAnswers[idx] === optIdx && optIdx !== q.correctAnswer ? 'ring-2 ring-red-500' : ''
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+          {showResults && (
+            <div className={`p-3 rounded-xl text-[10px] ${currentAnswers[idx] === q.correctAnswer ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+              <strong>Explicación:</strong> {q.explanation}
+            </div>
+          )}
+        </div>
+      ))}
+      {!showResults && (
+        <button 
+          onClick={() => setShowResults(true)}
+          className="w-full py-3 bg-[#f9c80e] text-black font-black text-xs uppercase rounded-xl hover:scale-[1.02] transition-all"
+        >
+          Corregir Test
+        </button>
+      )}
+    </div>
+  );
+};
+
+const MindMapViewer: React.FC<{ data: ConceptMap }> = ({ data }) => {
+  if (!data || !data.core) return <p className="text-red-400">Error cargando el esquema.</p>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col items-center">
+        <div className="bg-[#a51d36] p-6 rounded-3xl border border-white/20 shadow-xl text-center">
+          <p className="text-[10px] font-black uppercase text-[#f9c80e] mb-1">Núcleo Central</p>
+          <h3 className="text-xl font-black text-white italic">{data.core}</h3>
+        </div>
+        <div className="h-8 w-px bg-white/10" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {data.branches.map((branch, i) => (
+          <div key={i} className="bg-[#111] p-5 rounded-[2rem] border border-white/5 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-[#a51d36]/5 rounded-full -mr-12 -mt-12 transition-all group-hover:scale-110" />
+            <h4 className="text-sm font-black text-white mb-3 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-[#a51d36]/20 flex items-center justify-center text-[10px] text-[#f9c80e]">{i+1}</span>
+              {branch.node}
+            </h4>
+            <ul className="space-y-2">
+              {branch.details.map((detail, j) => (
+                <li key={j} className="text-[11px] text-gray-500 flex items-start gap-2">
+                  <div className="w-1 h-1 rounded-full bg-[#a51d36] mt-1.5 shrink-0" />
+                  {detail}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const MASTER_KEY = "US-2025";
 
-  const [config, setConfig] = useState(() => {
-    const saved = localStorage.getItem('sol_branding_v7');
-    return saved ? JSON.parse(saved) : {
-      appName: "SolvencIA",
-      deptName: "Dpto. Contabilidad y Economía Financiera",
-      iconType: "Sparkles"
-    };
+  // IMPORTANTE: RELLENA ESTOS DATOS DE FIREBASE AQUÍ PARA QUE LA SINCRONIZACIÓN FUNCIONE
+  const [config] = useState({
+    appName: "SolvencIA",
+    deptName: "Análisis de Estados Financieros I",
+    firebaseConfig: {
+      apiKey: "", // <--- TU API KEY DE FIREBASE
+      authDomain: "", // <--- TU AUTH DOMAIN
+      projectId: "", // <--- TU PROJECT ID
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    }
   });
 
   const [view, setView] = useState<AppView>(AppView.CHATS);
@@ -29,29 +139,31 @@ const App: React.FC = () => {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  const [privateDocs, setPrivateDocs] = useState<DocumentSource[]>(() => {
-    const savedDocs = localStorage.getItem('sol_custom_docs_v2');
-    const customDocs = savedDocs ? JSON.parse(savedDocs) : [];
-    return [...PRIVATE_KNOWLEDGE_BASE, ...customDocs];
-  });
+  const [trainingDocs, setTrainingDocs] = useState<DocumentSource[]>([]);
+  const [cloudDocs, setCloudDocs] = useState<DocumentSource[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'idle' | 'connected' | 'error'>('idle');
 
   const [showPassModal, setShowPassModal] = useState(false);
   const [passInput, setPassInput] = useState('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const clickCount = useRef(0);
 
   useEffect(() => {
-    localStorage.setItem('sol_branding_v7', JSON.stringify(config));
-    document.title = `${config.appName} - US`;
-  }, [config]);
+    if (config.firebaseConfig.projectId) {
+      initFirebase();
+    }
+  }, [config.firebaseConfig.projectId]);
 
   useEffect(() => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `Hola, soy SolvencIA. Mi base de conocimientos incluye todo el temario del ${config.deptName}. ¿Qué deseas consultar hoy?`,
+        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado a fondo todo el material de la asignatura Análisis de Estados Financieros I para ayudarte a despejar dudas, resumir conceptos complejos y generar contenido de repaso en segundos.\n\n⚠️ Recuerda: Aunque mis respuestas se basan en el material oficial, siempre es recomendable contrastar los datos críticos con tu profesor. ¿En qué puedo ayudarte hoy?`,
         timestamp: Date.now()
       }]);
     }
@@ -61,34 +173,117 @@ const App: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const initFirebase = async () => {
+    try {
+      setDbStatus('idle');
+      const app = initializeApp(config.firebaseConfig);
+      const db = getFirestore(app);
+      const querySnapshot = await getDocs(collection(db, "knowledge"));
+      const docs: DocumentSource[] = [];
+      querySnapshot.forEach((doc) => {
+        docs.push(doc.data() as DocumentSource);
+      });
+      setCloudDocs(docs);
+      setDbStatus('connected');
+    } catch (err) {
+      setDbStatus('error');
+    }
+  };
+
+  const syncToFirebase = async () => {
+    if (!config.firebaseConfig.projectId) return alert("Primero debes rellenar las credenciales de Firebase en el código de App.tsx.");
+    setIsSyncing(true);
+    try {
+      const app = initializeApp(config.firebaseConfig);
+      const db = getFirestore(app);
+      const batch = writeBatch(db);
+      
+      const allDocs = [...PRIVATE_KNOWLEDGE_BASE, ...trainingDocs];
+      for (const d of allDocs) {
+        const docRef = doc(db, "knowledge", d.id);
+        batch.set(docRef, d);
+      }
+
+      await batch.commit();
+      alert(`Biblioteca actualizada. Ahora todos los alumnos tienen acceso a estos ${allDocs.length} documentos.`);
+      setTrainingDocs([]);
+      initFirebase();
+    } catch (err: any) {
+      alert("Error al sincronizar. Verifica la conexión.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsProcessing(true);
+    const newDocs: DocumentSource[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        let text = "";
+        if (file.type === "application/pdf") {
+          const arrayBuffer = await file.arrayBuffer();
+          const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+          const pdf = await loadingTask.promise;
+          for (let p = 1; p <= pdf.numPages; p++) {
+            const page = await pdf.getPage(p);
+            const content = await page.getTextContent();
+            text += content.items.map((it: any) => it.str).join(" ") + "\n";
+          }
+        } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+          const arrayBuffer = await file.arrayBuffer();
+          const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
+          text = result.value;
+        } else {
+          text = await file.text();
+        }
+        
+        if (text.trim()) {
+          newDocs.push({
+            id: `doc-${Date.now()}-${i}`,
+            name: file.name,
+            content: text.trim(),
+            updatedAt: Date.now()
+          });
+        }
+      } catch (err) { console.error(err); }
+    }
+    
+    if (newDocs.length > 0) {
+      setTrainingDocs(prev => [...prev, ...newDocs]);
+    }
+    setIsProcessing(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleSend = async (customPrompt?: string, mode: any = 'text') => {
     const textToUse = customPrompt || inputValue;
     if (!textToUse.trim() || isLoading) return;
 
-    setMessages(prev => [...prev, { role: 'user', text: textToUse, timestamp: Date.now() }]);
-    if (!customPrompt) setInputValue('');
+    if (!customPrompt) {
+      setMessages(prev => [...prev, { role: 'user', text: textToUse, timestamp: Date.now() }]);
+      setInputValue('');
+    }
     setIsLoading(true);
 
     try {
+      const currentKnowledge = [...PRIVATE_KNOWLEDGE_BASE, ...cloudDocs, ...trainingDocs];
       if (mode === 'podcast') {
-        const scriptRes = await getAIResponse(`Resumen podcast: ${textToUse}`, messages, privateDocs, 'text');
-        if (scriptRes.text.includes("❌") || scriptRes.text.includes("⚠️")) {
-           setMessages(prev => [...prev, { role: 'model', text: scriptRes.text, timestamp: Date.now() }]);
-           setIsLoading(false);
-           return;
-        }
+        const scriptRes = await getAIResponse(`Genera una síntesis académica de: ${textToUse}`, messages, currentKnowledge, 'text');
         const audioBase64 = await generatePodcastAudio(scriptRes.text);
         if (audioBase64) {
-          setMessages(prev => [...prev, { role: 'model', text: "He generado un podcast sobre este tema.", type: 'podcast', data: audioBase64, timestamp: Date.now() }]);
-        } else {
-          setMessages(prev => [...prev, { role: 'model', text: "Resumen: " + scriptRes.text, timestamp: Date.now() }]);
+          setMessages(prev => [...prev, { role: 'model', text: "Resumen de audio generado.", type: 'podcast', data: audioBase64, timestamp: Date.now() }]);
         }
       } else {
-        const res = await getAIResponse(textToUse, messages, privateDocs, mode);
+        const res = await getAIResponse(textToUse, messages, currentKnowledge, mode);
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
     } catch (err) {
-      console.error(err);
+      setMessages(prev => [...prev, { role: 'model', text: "Error de conexión con SolvencIA.", timestamp: Date.now() }]);
     } finally {
       setIsLoading(false);
     }
@@ -100,26 +295,20 @@ const App: React.FC = () => {
       setIsPlayingAudio(true);
       if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       const ctx = audioContextRef.current;
-      
       const binaryString = atob(base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-      
       const dataInt16 = new Int16Array(bytes.buffer);
       const buffer = ctx.createBuffer(1, dataInt16.length, 24000);
       const channelData = buffer.getChannelData(0);
       for (let i = 0; i < dataInt16.length; i++) channelData[i] = dataInt16[i] / 32768.0;
-
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
       source.onended = () => setIsPlayingAudio(false);
       source.start(0);
-    } catch (e) {
-      console.error("Error en reproducción:", e);
-      setIsPlayingAudio(false);
-    }
+    } catch (e) { setIsPlayingAudio(false); }
   };
 
   const verifyAdmin = () => {
@@ -128,99 +317,60 @@ const App: React.FC = () => {
       setView(AppView.ADMIN);
       setShowPassModal(false);
       setPassInput('');
-    } else {
-      setPassInput('');
-    }
-  };
-
-  const getIcon = () => {
-    const props = { size: 28, className: "text-[#f9c80e]" };
-    switch (config.iconType) {
-      case 'GraduationCap': return <GraduationCap {...props} />;
-      case 'Landmark': return <Landmark {...props} />;
-      case 'Calculator': return <Calculator {...props} />;
-      case 'BarChart3': return <BarChart3 {...props} />;
-      default: return <Sparkles {...props} />;
     }
   };
 
   return (
     <div className="flex h-screen bg-[#050505] text-gray-200 overflow-hidden font-sans">
       <main className="flex-1 flex flex-col bg-[#080808] relative">
-        
         <header className="absolute top-0 left-0 p-6 flex items-center justify-between w-full z-40 bg-gradient-to-b from-[#080808] to-transparent pointer-events-none">
           <div className="flex items-center gap-4 select-none pointer-events-auto cursor-pointer" onClick={() => {
             clickCount.current += 1;
             if (clickCount.current === 5) { setShowPassModal(true); clickCount.current = 0; }
           }}>
-            <div className="w-12 h-12 bg-[#a51d36] rounded-xl flex items-center justify-center shadow-lg border border-white/10">
-              {getIcon()}
-            </div>
-            <div>
-              <h1 className="font-bold text-sm text-white leading-none">{config.appName}</h1>
-              <p className="text-[10px] text-[#a51d36] font-bold mt-1 uppercase tracking-tighter">{config.deptName}</p>
+            <div className="flex flex-col">
+              <h1 className="font-black text-2xl text-white leading-none tracking-tight">{config.appName}</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-[10px] text-[#a51d36] font-black uppercase tracking-tighter">{config.deptName}</p>
+                {dbStatus === 'connected' && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" title="Nube Conectada" />}
+              </div>
             </div>
           </div>
-          {isAdmin && view === AppView.CHATS && (
-            <button onClick={() => setView(AppView.ADMIN)} className="pointer-events-auto p-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all">
-              <Settings size={20} className="text-[#f9c80e]" />
+          {isAdmin && (
+            <button onClick={() => setView(view === AppView.ADMIN ? AppView.CHATS : AppView.ADMIN)} className="pointer-events-auto p-3 bg-white/5 rounded-2xl border border-white/10 text-gray-400 hover:text-white transition-all shadow-xl">
+              {view === AppView.ADMIN ? <XIcon size={20} /> : <SettingsIcon size={20} />}
             </button>
           )}
         </header>
 
         {view === AppView.CHATS && (
           <div className="flex-1 flex flex-col overflow-hidden pt-24">
-            
             <div className="flex-1 overflow-y-auto p-4 md:px-12 space-y-8 custom-scrollbar">
               <div className="max-w-3xl mx-auto space-y-8 pb-40">
-                {messages.map((msg, i) => {
-                  const isError = msg.text.includes("❌") || msg.text.includes("⚠️");
-                  return (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in`}>
-                      <div className={`max-w-[90%] p-6 rounded-[2rem] shadow-2xl ${
-                        msg.role === 'user' 
-                        ? 'bg-[#a51d36] text-white' 
-                        : isError 
-                          ? 'bg-red-950/40 border border-red-500/50 text-red-200' 
-                          : 'bg-[#121212] border border-white/5'
-                      }`}>
-                        {isError && <AlertCircle size={20} className="mb-3 text-red-500" />}
-                        {msg.type === 'image_infographic' ? (
-                          <div className="space-y-4">
-                            <p className="text-sm italic text-gray-400">{msg.text}</p>
-                            <img src={msg.data} className="w-full rounded-2xl border border-white/10" alt="Infografía IA" />
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in`}>
+                    <div className={`max-w-[90%] p-6 rounded-[2rem] shadow-2xl transition-all ${
+                      msg.role === 'user' ? 'bg-[#a51d36] text-white' : 'bg-[#121212] border border-white/5'
+                    }`}>
+                      {msg.type === 'quiz' ? <QuizViewer questions={msg.data} /> :
+                       msg.type === 'mindmap' ? <MindMapViewer data={msg.data} /> :
+                       msg.type === 'podcast' ? (
+                        <div className="flex items-center gap-5 p-2">
+                          <button onClick={() => playAudio(msg.data)} className={`p-5 rounded-2xl transition-all ${isPlayingAudio ? 'bg-gray-800' : 'bg-[#f9c80e] hover:scale-105'} text-black shadow-xl`}>
+                            {isPlayingAudio ? <SpeakerIcon size={24} className="animate-pulse" /> : <PlayIcon size={24} />}
+                          </button>
+                          <div className="space-y-0.5">
+                             <p className="text-[10px] font-black uppercase text-[#f9c80e] tracking-widest">Audio Académico</p>
+                             <p className="text-sm font-bold text-white">Escuchar resumen</p>
                           </div>
-                        ) : msg.type === 'quiz' ? (
-                          <QuizViewer questions={msg.data} />
-                        ) : msg.type === 'mindmap' ? (
-                          <MindMapViewer data={msg.data} />
-                        ) : msg.type === 'podcast' ? (
-                          <div className="flex items-center gap-5 bg-[#f9c80e]/5 p-5 rounded-3xl border border-[#f9c80e]/10">
-                            <div className={`w-12 h-12 bg-[#f9c80e] rounded-xl flex items-center justify-center ${isPlayingAudio ? 'animate-pulse' : ''}`}>
-                              <Headphones className="text-black" size={24} />
-                            </div>
-                            <button 
-                              onClick={() => playAudio(msg.data)} 
-                              disabled={isPlayingAudio} 
-                              className={`p-4 rounded-xl transition-all ${isPlayingAudio ? 'bg-gray-600' : 'bg-[#f9c80e] hover:scale-105 active:scale-95'} text-black`}
-                            >
-                              {isPlayingAudio ? <Volume2 size={24} /> : <Play size={24} />}
-                            </button>
-                            <span className="text-[10px] font-black uppercase text-[#f9c80e]">Podcast Educativo</span>
-                          </div>
-                        ) : (
-                          <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>
-                        )}
-                      </div>
+                        </div>
+                       ) : <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 {isLoading && (
                   <div className="flex justify-start animate-pulse">
-                    <div className="bg-[#121212] p-5 rounded-2xl border border-white/5 flex items-center gap-3">
-                      <Sparkles size={16} className="text-[#a51d36] animate-spin" />
-                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Consultando el PGC...</span>
-                    </div>
+                    <div className="bg-[#121212] p-5 rounded-3xl border border-white/5 text-[9px] font-black text-gray-700 uppercase tracking-widest">Consultando material oficial...</div>
                   </div>
                 )}
               </div>
@@ -229,20 +379,14 @@ const App: React.FC = () => {
             
             <div className="px-8 pb-8 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-12">
               <div className="max-w-3xl mx-auto">
-                <div className="flex flex-wrap gap-2 mb-4 justify-center md:justify-start">
+                <div className="flex flex-wrap gap-2 mb-6 justify-center">
                   {[
-                    { id: 'quiz', name: 'Test', prompt: 'Hazme un test de 3 preguntas sobre: ', icon: Award, color: 'text-yellow-500' },
-                    { id: 'mindmap', name: 'Mapa', prompt: 'Estructura un mapa conceptual de: ', icon: GitGraph, color: 'text-cyan-500' },
-                    { id: 'podcast', name: 'Podcast', prompt: 'Resumen para podcast sobre: ', icon: Headphones, color: 'text-purple-500' },
-                    { id: 'image_infographic', name: 'Infografía', prompt: 'Crea una infografía visual de: ', icon: ImageIcon, color: 'text-pink-500' },
+                    { id: 'quiz', name: 'Test Rápido', prompt: 'Genera un test sobre: ', icon: QuizIcon, color: 'text-yellow-500' },
+                    { id: 'mindmap', name: 'Esquema', prompt: 'Haz un mapa conceptual de: ', icon: MindmapIcon, color: 'text-cyan-500' },
+                    { id: 'podcast', name: 'Audio', prompt: 'Explícame en audio: ', icon: AudioIcon, color: 'text-purple-500' },
                   ].map(tool => (
-                    <button 
-                      key={tool.id} 
-                      onClick={() => handleSend(tool.prompt + (inputValue || "los conceptos clave"), tool.id as any)} 
-                      className="flex items-center gap-2 px-4 py-2.5 bg-[#121212] border border-white/10 rounded-xl hover:border-[#a51d36] transition-all text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white"
-                    >
-                      <tool.icon size={14} className={tool.color} />
-                      <span>{tool.name}</span>
+                    <button key={tool.id} onClick={() => handleSend(tool.prompt + (inputValue || "los estados financieros"), tool.id as any)} className="flex items-center gap-2 px-5 py-3 bg-[#111] border border-white/5 rounded-2xl hover:border-[#a51d36]/40 transition-all text-[10px] font-black uppercase tracking-widest text-gray-500">
+                      <tool.icon size={14} className={tool.color} /> <span>{tool.name}</span>
                     </button>
                   ))}
                 </div>
@@ -251,17 +395,13 @@ const App: React.FC = () => {
                   <textarea 
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                    placeholder="Escribe tu consulta o pide un test/mapa..."
-                    className="w-full bg-[#121212] border border-white/10 rounded-[2.5rem] min-h-[120px] pt-6 pb-14 pl-8 pr-20 focus:outline-none focus:ring-1 focus:ring-[#a51d36]/50 text-lg transition-all shadow-2xl placeholder:text-gray-700 resize-none custom-scrollbar"
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                    placeholder="Escribe tu duda sobre Análisis de Estados Financieros..."
+                    className="w-full bg-[#111] border border-white/5 rounded-[2.5rem] min-h-[140px] pt-8 pb-16 pl-10 pr-24 focus:outline-none focus:ring-2 focus:ring-[#a51d36]/20 text-lg transition-all shadow-2xl placeholder:text-gray-800 resize-none custom-scrollbar"
                   />
-                  <div className="absolute right-6 bottom-5">
-                    <button 
-                      onClick={() => handleSend()} 
-                      disabled={isLoading} 
-                      className="p-4 bg-[#a51d36] text-white rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-xl disabled:opacity-50"
-                    >
-                      <Send size={24}/>
+                  <div className="absolute right-6 bottom-6">
+                    <button onClick={() => handleSend()} disabled={isLoading} className="p-5 bg-[#a51d36] text-white rounded-3xl transition-all hover:scale-105 active:scale-95 shadow-2xl disabled:opacity-30">
+                      <SendIcon size={28}/>
                     </button>
                   </div>
                 </div>
@@ -271,103 +411,88 @@ const App: React.FC = () => {
         )}
 
         {view === AppView.ADMIN && (
-          <div className="flex-1 overflow-y-auto p-12 bg-[#080808] pt-24 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-12 bg-[#080808] pt-24 custom-scrollbar pb-40">
             <div className="max-w-4xl mx-auto">
-               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors">
-                  <ArrowLeft size={20} /> Volver al Chat
+               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 transition-colors uppercase text-[10px] font-black tracking-widest">
+                  <BackIcon size={16} /> Volver al Chat
                </button>
-               <h2 className="text-4xl font-black text-white mb-12 tracking-tight">Panel Maestro</h2>
-               <div className="grid grid-cols-1 gap-8">
-                  <section className="bg-[#121212] border border-white/5 p-8 rounded-[2.5rem] space-y-6">
-                    <h3 className="text-xs font-black text-[#a51d36] uppercase tracking-widest flex items-center gap-2"><Settings size={14}/> Identidad Visual</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-gray-500 ml-2">Nombre App</label>
-                        <input className="w-full bg-black border border-white/10 rounded-xl p-4" value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-gray-500 ml-2">Departamento</label>
-                        <input className="w-full bg-black border border-white/10 rounded-xl p-4" value={config.deptName} onChange={e => setConfig({...config, deptName: e.target.value})} />
+               
+               <h2 className="text-6xl font-black text-white tracking-tighter mb-4 italic">Gestor de Contenidos</h2>
+               <p className="text-gray-500 mb-16 text-xl max-w-2xl">Alimenta la inteligencia de la asignatura subiendo material oficial para todos los alumnos.</p>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* CARGA DE ARCHIVOS */}
+                  <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6 italic">1. Carga de Material</h3>
+                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all mb-6`}>
+                       {isProcessing ? <LoaderIcon size={32} className="text-[#f9c80e] animate-spin"/> : <UploadIcon size={32} className="text-gray-700"/>}
+                       <span className="text-[10px] font-black uppercase text-gray-500">Seleccionar PDF / Word</span>
+                    </div>
+                    <p className="text-[10px] text-gray-600 leading-relaxed">Sube los documentos que quieres que la IA conozca. Se procesarán localmente antes de subirlos a la nube.</p>
+                  </div>
+
+                  {/* SINCRONIZACIÓN */}
+                  <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6 italic">2. Publicación Global</h3>
+                      <div className="space-y-4 mb-8">
+                        <div className="flex items-center justify-between p-4 bg-black/40 rounded-xl">
+                          <span className="text-xs text-gray-400">Estado de Red:</span>
+                          <span className={`text-[10px] font-black uppercase ${dbStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
+                            {dbStatus === 'connected' ? 'Sincronizado' : 'Error'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-4 bg-black/40 rounded-xl">
+                          <span className="text-xs text-gray-400">Docs en Nube:</span>
+                          <span className="text-xs font-black text-white">{cloudDocs.length}</span>
+                        </div>
                       </div>
                     </div>
-                  </section>
+                    <button onClick={syncToFirebase} disabled={isSyncing || trainingDocs.length === 0} className="w-full py-6 bg-[#a51d36] text-white rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] active:scale-95 disabled:opacity-20 transition-all">
+                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <SyncIcon size={16}/>} Actualizar Biblioteca
+                    </button>
+                  </div>
                </div>
+
+               {/* LISTADO DE ARCHIVOS */}
+               <div className="mt-12 bg-black/40 p-10 rounded-[3rem] border border-white/5">
+                  <div className="flex items-center justify-between mb-10">
+                    <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Documentos Activos en el Sistema</h4>
+                    <span className="px-3 py-1 bg-white/5 rounded-full text-[9px] font-black text-gray-600 uppercase">Biblioteca Total: {cloudDocs.length + trainingDocs.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {trainingDocs.map(d => (
+                      <div key={d.id} className="p-4 bg-[#a51d36]/10 rounded-2xl border border-[#a51d36]/20 text-[10px] font-bold text-[#f9c80e] flex items-center gap-3 animate-pulse">
+                        <LoaderIcon size={12} /> <span className="truncate">{d.name}</span>
+                      </div>
+                    ))}
+                    {cloudDocs.map(d => (
+                      <div key={d.id} className="p-4 bg-[#111] rounded-2xl border border-white/5 text-[10px] font-bold text-gray-600 truncate flex items-center gap-3">
+                        <CheckIcon size={12} className="text-green-500" /> {d.name}
+                      </div>
+                    ))}
+                    {cloudDocs.length === 0 && trainingDocs.length === 0 && (
+                      <p className="col-span-full py-10 text-center text-gray-800 text-[10px] font-black uppercase tracking-widest italic">No hay material cargado en la base de datos.</p>
+                    )}
+                  </div>
+               </div>
+               
+               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} accept=".pdf,.docx,.txt" />
             </div>
           </div>
         )}
-
       </main>
 
+      {/* MODAL PASSWORD */}
       {showPassModal && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6">
-          <div className="bg-[#111] border border-white/10 p-14 rounded-[4rem] w-full max-w-md text-center shadow-2xl relative animate-in">
-            <button onClick={() => setShowPassModal(false)} className="absolute top-10 right-10 text-gray-700 hover:text-white"><X size={28}/></button>
-            <Key className="text-[#a51d36] mx-auto mb-10" size={40}/>
-            <h3 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase">Docente Autorizado</h3>
-            <div className="space-y-10">
-              <input 
-                type="password" 
-                autoFocus 
-                className="w-full bg-black border border-white/10 rounded-2xl py-7 px-8 text-center text-[#f9c80e] text-4xl font-black tracking-[0.3em] focus:outline-none focus:ring-1 focus:ring-[#a51d36]" 
-                value={passInput} 
-                onChange={(e) => setPassInput(e.target.value)} 
-                onKeyDown={(e) => e.key === 'Enter' && verifyAdmin()} 
-              />
-              <button onClick={verifyAdmin} className="w-full py-7 bg-[#a51d36] text-white rounded-2xl font-black text-xs uppercase tracking-[0.4em] shadow-2xl transition-all">Desbloquear Panel</button>
-            </div>
-          </div>
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center">
+           <div className="w-full max-sm:px-6 max-w-sm text-center">
+              <KeyIcon size={48} className="text-[#a51d36] mx-auto mb-10" />
+              <input type="password" autoFocus className="w-full bg-transparent border-b-2 border-white/10 py-4 text-center text-4xl font-black text-[#f9c80e] focus:outline-none" value={passInput} onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && verifyAdmin()} />
+              <p className="mt-8 text-[10px] text-gray-700 font-black uppercase tracking-[0.3em]">Acceso Maestro SolvencIA</p>
+           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-const QuizViewer: React.FC<{questions: QuizQuestion[]}> = ({ questions }) => {
-  const [selected, setSelected] = useState<number | null>(null);
-  if (!questions || questions.length === 0) return null;
-  
-  return (
-    <div className="space-y-6">
-      <div className="text-[10px] font-black text-[#f9c80e] uppercase tracking-widest border-b border-white/5 pb-2">Evaluación IA</div>
-      <h3 className="text-lg font-bold">{questions[0].question}</h3>
-      <div className="grid grid-cols-1 gap-2">
-        {questions[0].options.map((opt, i) => (
-          <button 
-            key={i} 
-            onClick={() => setSelected(i)}
-            className={`w-full text-left px-5 py-4 rounded-2xl border transition-all flex items-center gap-4 ${selected === i ? (i === questions[0].correctAnswer ? 'bg-green-600/20 border-green-500' : 'bg-red-600/20 border-red-500') : 'bg-white/5 border-white/5'}`}
-          >
-            <span className="font-black text-[10px] opacity-20">{String.fromCharCode(65 + i)}</span>
-            <span className="font-semibold text-sm">{opt}</span>
-          </button>
-        ))}
-      </div>
-      {selected !== null && (
-        <p className="text-[11px] text-gray-400 p-4 bg-white/5 rounded-xl border border-white/10 animate-in">{questions[0].explanation}</p>
-      )}
-    </div>
-  );
-};
-
-const MindMapViewer: React.FC<{data: ConceptMap}> = ({ data }) => {
-  if (!data) return null;
-  return (
-    <div className="space-y-8">
-      <div className="text-center">
-         <div className="inline-block bg-[#a51d36] text-white px-10 py-5 rounded-3xl font-bold uppercase text-[11px] tracking-widest shadow-2xl border border-white/10">{data.core}</div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {data.branches?.slice(0, 4).map((branch, i) => (
-          <div key={i} className="bg-white/5 border border-white/5 p-6 rounded-[2rem] shadow-xl hover:border-white/20 transition-all">
-            <h4 className="text-[#f9c80e] font-black uppercase text-[9px] mb-4 flex items-center gap-2"><div className="w-1.5 h-1.5 bg-[#f9c80e] rounded-full"/> {branch.node}</h4>
-            <ul className="space-y-2">
-              {branch.details?.slice(0, 3).map((detail, j) => (
-                <li key={j} className="text-[11px] text-gray-500 flex gap-3"><div className="w-1 h-1 bg-white/20 rounded-full mt-1.5 shrink-0" />{detail}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
     </div>
   );
 };

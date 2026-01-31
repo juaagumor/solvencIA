@@ -1,3 +1,4 @@
+
 {
   "name": "solvencia-us",
   "private": true,
@@ -12,7 +13,8 @@
     "@google/genai": "^1.38.0",
     "lucide-react": "^0.563.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "firebase": "^10.8.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

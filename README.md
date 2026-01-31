@@ -1,20 +1,34 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# SolvencIA - Dpto. Contabilidad y Economía Financiera
 
-This contains everything you need to run your app locally.
+SolvencIA es una plataforma educativa avanzada basada en inteligencia artificial, diseñada específicamente para el entorno académico del Departamento de Contabilidad y Economía Financiera de la Universidad de Sevilla.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1SWUe_iib9aJ85GHEdhWd3jeh-XtYioOa
+## 🚀 Características principales
+- **Conocimiento Privado:** Basada en 50 temas especializados de la asignatura.
+- **Fuentes Invisibles:** La IA responde con rigor académico sin citar archivos externos, manteniendo una interfaz limpia.
+- **Herramientas de Estudio:**
+  - 📝 Generación de Tests interactivos.
+  - 🧠 Mapas Conceptuales automáticos.
+  - 🎙️ Podcast Educativos (Dúo Profesor/Alumno).
+  - 📊 Infografías visuales generadas por IA.
+- **Panel Maestro:** Control total sobre el branding y la base de conocimientos.
 
-## Run Locally
+## 🛠️ Configuración para GitHub Pages
 
-**Prerequisites:**  Node.js
+Este proyecto utiliza **GitHub Actions** para el despliegue automático.
 
+1. **API KEY:** Debes añadir tu clave de Gemini API en los secretos del repositorio:
+   - Ve a `Settings > Secrets and variables > Actions`.
+   - Crea un secreto llamado `API_KEY`.
+2. **Despliegue:** En `Settings > Pages`, asegúrate de que la fuente sea `GitHub Actions`.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🔒 Acceso Administrador
+El panel de configuración está oculto para los alumnos. Para acceder:
+1. Haz clic 5 veces seguidas en el logo de la aplicación.
+2. Introduce la clave maestra: `US-2025`.
+
+## 📁 Estructura del Conocimiento
+Los 50 temas base se encuentran en el archivo `knowledge.ts`. Puedes editarlos directamente allí o usar el Panel Maestro para añadir contenido dinámico que se guardará en el navegador del administrador.
+
+---
+*Desarrollado para el Dpto. de Contabilidad y Economía Financiera.*
