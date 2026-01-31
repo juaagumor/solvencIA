@@ -140,7 +140,7 @@ const App: React.FC = () => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado a fondo todo el material de la asignatura para ayudarte a despejar dudas y repasar conceptos. Ten en cuenta que, como IA, puedo cometer errores; verifica siempre los datos críticos.\n\n¿En qué puedo ayudarte hoy?`,
+        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente basado en IA. He analizado a fondo todo el material de la asignatura para ayudarte a despejar dudas y repasar conceptos. Ten en cuenta que puedo cometer errores y si es una duda importante consúltala a tu profesor..\n\n¿En qué puedo ayudarte hoy?`,
         timestamp: Date.now()
       }]);
     }
