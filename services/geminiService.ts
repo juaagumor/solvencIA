@@ -8,17 +8,7 @@ const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
     .map(d => `CONTENIDO DEL ${d.name}:\n${d.content}`)
     .join('\n\n---\n\n');
   
-  return `
-Eres SolvencIA, la IA experta del Departamento de Contabilidad y Economía Financiera de la Universidad de Sevilla.
-
-REGLAS DE ORO:
-1. FUENTES INVISIBLES: No nombres nunca los archivos o temas.
-2. RIGOR: Usa el Plan General Contable (PGC).
-3. TONO: Académico y profesional.
-
-CONTEXTO:
-${docsContext || 'Contabilidad española y PGC.'}
-`;
+  return `Eres SolvencIA, experto del Dpto. de Contabilidad de la US. Responde con rigor usando el PGC. NO cites fuentes, responde con autoridad propia.`;
 };
 
 export const getAIResponse = async (
@@ -28,31 +18,32 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' | 'image_infographic' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
-  // Obtenemos la clave inyectada por Vite
   const apiKey = process.env.API_KEY;
 
-  // LOG DE DIAGNÓSTICO (Visible en F12)
-  if (!apiKey || apiKey === "undefined" || apiKey === "") {
-    console.error("🚨 ERROR CRÍTICO: La API_KEY no ha sido detectada por la aplicación.");
-    return { text: "Error de configuración: La clave de API no se ha inyectado en el despliegue. Revisa los Secrets de GitHub." };
+  // Diagnóstico para el usuario
+  if (!apiKey || apiKey === "undefined") {
+    console.error("🚨 ERROR: API_KEY no inyectada en el build.");
+    return { text: "Error: No se ha detectado la clave de API en el despliegue." };
   }
+  
+  // Imprimimos el inicio para verificar que la clave es la correcta sin exponerla toda
+  console.log("🔍 Diagnóstico de Clave - Comienza por:", apiKey.substring(0, 6));
 
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    // MODO IMAGEN
     if (mode === 'image_infographic') {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
-        contents: { parts: [{ text: `Infografía técnica: ${prompt}` }] }
+        contents: { parts: [{ text: `Infografía profesional contable: ${prompt}` }] }
       });
       const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
       return part?.inlineData 
-        ? { text: "Infografía generada.", data: `data:image/png;base64,${part.inlineData.data}` }
-        : { text: "No se pudo generar la imagen." };
+        ? { text: "Visualización generada.", data: `data:image/png;base64,${part.inlineData.data}` }
+        : { text: "Error generando imagen." };
     }
 
-    const contents = history.slice(-5).map(msg => ({
+    const contents = history.slice(-6).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
@@ -82,7 +73,8 @@ export const getAIResponse = async (
           properties: {
             core: { type: Type.STRING },
             branches: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { node: { type: Type.STRING }, details: { type: Type.ARRAY, items: { type: Type.STRING } } } } }
-          }
+          },
+          required: ["core", "branches"]
         };
       }
     }
@@ -90,7 +82,7 @@ export const getAIResponse = async (
     contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-lite-latest', // Modelo más compatible y rápido
+      model: 'gemini-3-flash-preview', // Usamos el modelo más robusto
       contents: contents as any,
       config: {
         systemInstruction: getBaseSystemInstruction(privateDocs),
@@ -104,18 +96,14 @@ export const getAIResponse = async (
     if (mode === 'text') return { text };
     
     try {
-      return { text: "Análisis completado.", data: JSON.parse(text) };
+      return { text: "Contenido generado con éxito.", data: JSON.parse(text) };
     } catch (e) {
       return { text };
     }
 
   } catch (error: any) {
-    console.error("ERROR DETALLADO DE API:", error);
-    // Si el error es 400, la clave es físicamente inválida
-    if (error.message?.includes("400")) {
-      return { text: "La clave de API proporcionada no es válida. Por favor, genera una nueva en AI Studio y actualiza el Secret de GitHub." };
-    }
-    return { text: `Error: ${error.message || 'Error de conexión'}` };
+    console.error("❌ ERROR API:", error);
+    return { text: `Error de la IA (${error.status || 'API'}): ${error.message || 'Error de conexión'}` };
   }
 };
 
@@ -127,16 +115,11 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Haz un diálogo breve profesor-alumna sobre: ${text}` }] }],
+      contents: [{ parts: [{ text: `Crea un diálogo corto sobre: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
-          multiSpeakerVoiceConfig: {
-            speakerVoiceConfigs: [
-              { speaker: 'Profesor', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-              { speaker: 'Alumna', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } }
-            ]
-          }
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
         }
       }
     });
