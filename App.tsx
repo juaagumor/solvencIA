@@ -4,7 +4,7 @@ import {
   Send, Sparkles, X, ShieldCheck, Database, Key, Trash2, Headphones, 
   Award, Play, Volume2, FileText, Settings, GraduationCap, 
   BarChart3, Landmark, Calculator, Image as ImageIcon,
-  GitGraph, PlusCircle, Copy, Check, ArrowLeft
+  GitGraph, PlusCircle, Copy, Check, ArrowLeft, AlertCircle
 } from 'lucide-react';
 import { Message, AppView, DocumentSource, QuizQuestion, ConceptMap } from './types';
 import { getAIResponse, generatePodcastAudio } from './services/geminiService';
@@ -35,9 +35,6 @@ const App: React.FC = () => {
     return [...PRIVATE_KNOWLEDGE_BASE, ...customDocs];
   });
 
-  const [newDocTitle, setNewDocTitle] = useState('');
-  const [newDocContent, setNewDocContent] = useState('');
-  const [showCopyStatus, setShowCopyStatus] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
   const [passInput, setPassInput] = useState('');
 
@@ -54,7 +51,7 @@ const App: React.FC = () => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `Hola, soy SolvencIA. Mi base de conocimientos incluye todo el temario del ${config.deptName}. ¿Qué concepto deseas profundizar hoy?`,
+        text: `Hola, soy SolvencIA. Mi base de conocimientos incluye todo el temario del ${config.deptName}. ¿Qué deseas consultar hoy?`,
         timestamp: Date.now()
       }]);
     }
@@ -74,12 +71,17 @@ const App: React.FC = () => {
 
     try {
       if (mode === 'podcast') {
-        const scriptRes = await getAIResponse(`Genera un breve resumen para podcast sobre: ${textToUse}`, messages, privateDocs, 'text');
+        const scriptRes = await getAIResponse(`Resumen podcast: ${textToUse}`, messages, privateDocs, 'text');
+        if (scriptRes.text.includes("❌") || scriptRes.text.includes("⚠️")) {
+           setMessages(prev => [...prev, { role: 'model', text: scriptRes.text, timestamp: Date.now() }]);
+           setIsLoading(false);
+           return;
+        }
         const audioBase64 = await generatePodcastAudio(scriptRes.text);
         if (audioBase64) {
-          setMessages(prev => [...prev, { role: 'model', text: "He generado un podcast educativo sobre este tema.", type: 'podcast', data: audioBase64, timestamp: Date.now() }]);
+          setMessages(prev => [...prev, { role: 'model', text: "He generado un podcast sobre este tema.", type: 'podcast', data: audioBase64, timestamp: Date.now() }]);
         } else {
-          setMessages(prev => [...prev, { role: 'model', text: "No he podido generar el audio del podcast en este momento, pero aquí tienes el resumen: " + scriptRes.text, timestamp: Date.now() }]);
+          setMessages(prev => [...prev, { role: 'model', text: "Resumen: " + scriptRes.text, timestamp: Date.now() }]);
         }
       } else {
         const res = await getAIResponse(textToUse, messages, privateDocs, mode);
@@ -171,38 +173,48 @@ const App: React.FC = () => {
             
             <div className="flex-1 overflow-y-auto p-4 md:px-12 space-y-8 custom-scrollbar">
               <div className="max-w-3xl mx-auto space-y-8 pb-40">
-                {messages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in`}>
-                    <div className={`max-w-[90%] p-6 rounded-[2rem] shadow-2xl ${msg.role === 'user' ? 'bg-[#a51d36] text-white' : 'bg-[#121212] border border-white/5'}`}>
-                      {msg.type === 'image_infographic' ? (
-                        <div className="space-y-4">
-                          <p className="text-sm italic text-gray-400">{msg.text}</p>
-                          <img src={msg.data} className="w-full rounded-2xl border border-white/10" alt="Infografía IA" />
-                        </div>
-                      ) : msg.type === 'quiz' ? (
-                        <QuizViewer questions={msg.data} />
-                      ) : msg.type === 'mindmap' ? (
-                        <MindMapViewer data={msg.data} />
-                      ) : msg.type === 'podcast' ? (
-                        <div className="flex items-center gap-5 bg-[#f9c80e]/5 p-5 rounded-3xl border border-[#f9c80e]/10">
-                          <div className={`w-12 h-12 bg-[#f9c80e] rounded-xl flex items-center justify-center ${isPlayingAudio ? 'animate-pulse' : ''}`}>
-                            <Headphones className="text-black" size={24} />
+                {messages.map((msg, i) => {
+                  const isError = msg.text.includes("❌") || msg.text.includes("⚠️");
+                  return (
+                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in`}>
+                      <div className={`max-w-[90%] p-6 rounded-[2rem] shadow-2xl ${
+                        msg.role === 'user' 
+                        ? 'bg-[#a51d36] text-white' 
+                        : isError 
+                          ? 'bg-red-950/40 border border-red-500/50 text-red-200' 
+                          : 'bg-[#121212] border border-white/5'
+                      }`}>
+                        {isError && <AlertCircle size={20} className="mb-3 text-red-500" />}
+                        {msg.type === 'image_infographic' ? (
+                          <div className="space-y-4">
+                            <p className="text-sm italic text-gray-400">{msg.text}</p>
+                            <img src={msg.data} className="w-full rounded-2xl border border-white/10" alt="Infografía IA" />
                           </div>
-                          <button 
-                            onClick={() => playAudio(msg.data)} 
-                            disabled={isPlayingAudio} 
-                            className={`p-4 rounded-xl transition-all ${isPlayingAudio ? 'bg-gray-600' : 'bg-[#f9c80e] hover:scale-105 active:scale-95'} text-black`}
-                          >
-                            {isPlayingAudio ? <Volume2 size={24} /> : <Play size={24} />}
-                          </button>
-                          <span className="text-[10px] font-black uppercase text-[#f9c80e]">Podcast US</span>
-                        </div>
-                      ) : (
-                        <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>
-                      )}
+                        ) : msg.type === 'quiz' ? (
+                          <QuizViewer questions={msg.data} />
+                        ) : msg.type === 'mindmap' ? (
+                          <MindMapViewer data={msg.data} />
+                        ) : msg.type === 'podcast' ? (
+                          <div className="flex items-center gap-5 bg-[#f9c80e]/5 p-5 rounded-3xl border border-[#f9c80e]/10">
+                            <div className={`w-12 h-12 bg-[#f9c80e] rounded-xl flex items-center justify-center ${isPlayingAudio ? 'animate-pulse' : ''}`}>
+                              <Headphones className="text-black" size={24} />
+                            </div>
+                            <button 
+                              onClick={() => playAudio(msg.data)} 
+                              disabled={isPlayingAudio} 
+                              className={`p-4 rounded-xl transition-all ${isPlayingAudio ? 'bg-gray-600' : 'bg-[#f9c80e] hover:scale-105 active:scale-95'} text-black`}
+                            >
+                              {isPlayingAudio ? <Volume2 size={24} /> : <Play size={24} />}
+                            </button>
+                            <span className="text-[10px] font-black uppercase text-[#f9c80e]">Podcast Educativo</span>
+                          </div>
+                        ) : (
+                          <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {isLoading && (
                   <div className="flex justify-start animate-pulse">
                     <div className="bg-[#121212] p-5 rounded-2xl border border-white/5 flex items-center gap-3">
@@ -221,7 +233,7 @@ const App: React.FC = () => {
                   {[
                     { id: 'quiz', name: 'Test', prompt: 'Hazme un test de 3 preguntas sobre: ', icon: Award, color: 'text-yellow-500' },
                     { id: 'mindmap', name: 'Mapa', prompt: 'Estructura un mapa conceptual de: ', icon: GitGraph, color: 'text-cyan-500' },
-                    { id: 'podcast', name: 'Podcast', prompt: 'Explícame en un podcast breve: ', icon: Headphones, color: 'text-purple-500' },
+                    { id: 'podcast', name: 'Podcast', prompt: 'Resumen para podcast sobre: ', icon: Headphones, color: 'text-purple-500' },
                     { id: 'image_infographic', name: 'Infografía', prompt: 'Crea una infografía visual de: ', icon: ImageIcon, color: 'text-pink-500' },
                   ].map(tool => (
                     <button 
@@ -240,10 +252,10 @@ const App: React.FC = () => {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                    placeholder="Escribe tu consulta o pega un texto para analizar..."
-                    className="w-full bg-[#121212] border border-white/10 rounded-[2.5rem] min-h-[160px] pt-8 pb-16 pl-8 pr-24 focus:outline-none focus:ring-1 focus:ring-[#a51d36]/50 text-lg transition-all shadow-2xl placeholder:text-gray-700 resize-none custom-scrollbar"
+                    placeholder="Escribe tu consulta o pide un test/mapa..."
+                    className="w-full bg-[#121212] border border-white/10 rounded-[2.5rem] min-h-[120px] pt-6 pb-14 pl-8 pr-20 focus:outline-none focus:ring-1 focus:ring-[#a51d36]/50 text-lg transition-all shadow-2xl placeholder:text-gray-700 resize-none custom-scrollbar"
                   />
-                  <div className="absolute right-6 bottom-6 flex gap-2">
+                  <div className="absolute right-6 bottom-5">
                     <button 
                       onClick={() => handleSend()} 
                       disabled={isLoading} 
@@ -264,13 +276,19 @@ const App: React.FC = () => {
                <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors">
                   <ArrowLeft size={20} /> Volver al Chat
                </button>
-               <h2 className="text-4xl font-black text-white mb-12 tracking-tight">Configuración del Sistema</h2>
+               <h2 className="text-4xl font-black text-white mb-12 tracking-tight">Panel Maestro</h2>
                <div className="grid grid-cols-1 gap-8">
                   <section className="bg-[#121212] border border-white/5 p-8 rounded-[2.5rem] space-y-6">
-                    <h3 className="text-xs font-black text-[#a51d36] uppercase tracking-widest flex items-center gap-2"><Settings size={14}/> Branding Visual</h3>
+                    <h3 className="text-xs font-black text-[#a51d36] uppercase tracking-widest flex items-center gap-2"><Settings size={14}/> Identidad Visual</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input className="bg-black border border-white/10 rounded-xl p-4" value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} placeholder="Nombre" />
-                      <input className="bg-black border border-white/10 rounded-xl p-4" value={config.deptName} onChange={e => setConfig({...config, deptName: e.target.value})} placeholder="Departamento" />
+                      <div className="space-y-2">
+                        <label className="text-[10px] uppercase font-bold text-gray-500 ml-2">Nombre App</label>
+                        <input className="w-full bg-black border border-white/10 rounded-xl p-4" value={config.appName} onChange={e => setConfig({...config, appName: e.target.value})} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] uppercase font-bold text-gray-500 ml-2">Departamento</label>
+                        <input className="w-full bg-black border border-white/10 rounded-xl p-4" value={config.deptName} onChange={e => setConfig({...config, deptName: e.target.value})} />
+                      </div>
                     </div>
                   </section>
                </div>
@@ -285,7 +303,7 @@ const App: React.FC = () => {
           <div className="bg-[#111] border border-white/10 p-14 rounded-[4rem] w-full max-w-md text-center shadow-2xl relative animate-in">
             <button onClick={() => setShowPassModal(false)} className="absolute top-10 right-10 text-gray-700 hover:text-white"><X size={28}/></button>
             <Key className="text-[#a51d36] mx-auto mb-10" size={40}/>
-            <h3 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase">Identidad Docente</h3>
+            <h3 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase">Docente Autorizado</h3>
             <div className="space-y-10">
               <input 
                 type="password" 
@@ -295,7 +313,7 @@ const App: React.FC = () => {
                 onChange={(e) => setPassInput(e.target.value)} 
                 onKeyDown={(e) => e.key === 'Enter' && verifyAdmin()} 
               />
-              <button onClick={verifyAdmin} className="w-full py-7 bg-[#a51d36] text-white rounded-2xl font-black text-xs uppercase tracking-[0.4em] shadow-2xl transition-all">Acceder</button>
+              <button onClick={verifyAdmin} className="w-full py-7 bg-[#a51d36] text-white rounded-2xl font-black text-xs uppercase tracking-[0.4em] shadow-2xl transition-all">Desbloquear Panel</button>
             </div>
           </div>
         </div>
@@ -304,16 +322,14 @@ const App: React.FC = () => {
   );
 };
 
-/* RENDERIZADORES DE APOYO */
-
 const QuizViewer: React.FC<{questions: QuizQuestion[]}> = ({ questions }) => {
   const [selected, setSelected] = useState<number | null>(null);
   if (!questions || questions.length === 0) return null;
   
   return (
     <div className="space-y-6">
-      <div className="text-[10px] font-black text-[#f9c80e] uppercase tracking-widest border-b border-white/5 pb-2">Repaso de Conocimientos</div>
-      <h3 className="text-lg font-bold leading-tight">{questions[0].question}</h3>
+      <div className="text-[10px] font-black text-[#f9c80e] uppercase tracking-widest border-b border-white/5 pb-2">Evaluación IA</div>
+      <h3 className="text-lg font-bold">{questions[0].question}</h3>
       <div className="grid grid-cols-1 gap-2">
         {questions[0].options.map((opt, i) => (
           <button 
@@ -327,7 +343,7 @@ const QuizViewer: React.FC<{questions: QuizQuestion[]}> = ({ questions }) => {
         ))}
       </div>
       {selected !== null && (
-        <p className="text-[11px] text-gray-400 animate-in">{questions[0].explanation}</p>
+        <p className="text-[11px] text-gray-400 p-4 bg-white/5 rounded-xl border border-white/10 animate-in">{questions[0].explanation}</p>
       )}
     </div>
   );
