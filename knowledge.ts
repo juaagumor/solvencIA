@@ -10,7 +10,7 @@ import { DocumentSource } from './types';
 export const PRIVATE_KNOWLEDGE_BASE: DocumentSource[] = [
   {
     id: 'doc-1',
-    name: 'Tema 1: Información y toma de decisiones',
+    name: 'Tema 1: Información y toma de decisiones I',
     content: `1.	Información y toma de decisiones
 En una empresa se hace necesario tomar decisiones, para tomar decisiones fundamentadas es necesario disponer de información sobre la empresa. Entre los diferentes tipos de información se encuentra la información contable, cuya utilidad gira en torno a poder evaluar la posibilidad de obtener resultados y flujos de efectivo en el futuro. La información contable es útil para tomar decisiones porque reduce la incertidumbre ya que a partir de ella se puede determinar la rentabilidad y el riesgo, haciendo que el decisor tome una decisión basada en la información.
 Para tomar esta decisión hay que respetar la restricción coste-beneficio y hay que tener en cuenta que se puede producir asimetría en la información, es decir, que haya usuarios que tengan más información que otros (no tiene la misma información alguien que conoce la empresa desde dentro que alguien externo que solo puede interpretar las cuentas anuales).
