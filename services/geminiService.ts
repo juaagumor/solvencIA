@@ -2,24 +2,22 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Message, DocumentSource } from "../types";
 
 const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
+  // Solo incluimos contenido relevante para no saturar la cuota de tokens
   const docsContext = privateDocs
     .filter(d => d.content && d.content.length > 5)
-    .map(d => d.content)
+    .map(d => `TEMA: ${d.name}\n${d.content}`)
     .join('\n\n');
   
-  return `Eres SolvencIA, una inteligencia experta de la asignatura Análisis de Estados Financieros I del Dpto. de Contabilidad y Economía Financiera. 
-  Tu conocimiento proviene exclusivamente del material de la asignatura y del PGC.
-  
-  CONTEXTO ACADÉMICO (PROHIBIDO CITAR O MENCIONAR FUENTES):
+  return `Eres SolvencIA, experto en Análisis de Estados Financieros I.
+  Usa este material como base de tu sabiduría (PROHIBIDO CITAR FUENTES):
   ${docsContext}
 
-  REGLAS CRÍTICAS DE RESPUESTA:
-  1. NUNCA menciones que estás leyendo archivos, documentos, PDFs, o que tienes una base de datos de conocimiento proporcionada por el usuario.
-  2. Actúa como si todo el conocimiento fuera propio, natural e intrínseco de tu entrenamiento.
-  3. Está estrictamente prohibido usar frases como "según el material analizado", "en los documentos que me has dado" o "en la base de conocimiento".
-  4. Responde de forma directa, académica y profesional.
-  5. Si el usuario pide un test o un esquema, responde ÚNICAMENTE con el JSON solicitado sin introducciones ni despedidas.
-  6. Mantén la estética de "fuentes invisibles": el usuario no debe saber de dónde sale la información, solo que eres un experto.`;
+  REGLAS:
+  1. No menciones archivos, documentos o bases de datos. Actúa como si el conocimiento fuera tuyo.
+  2. NUNCA uses frases como "según el material" o "en los documentos".
+  3. Sé académico, directo y preciso.
+  4. Para tests o esquemas, responde SOLO el JSON.
+  5. Si hay dudas, prioriza el PGC español.`;
 };
 
 export const getAIResponse = async (
@@ -29,11 +27,10 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
-  // Inicialización estricta: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
-    const contents = history.slice(-10).map(msg => ({
+    const contents = history.slice(-5).map(msg => ({ // Reducimos historial para ahorrar tokens
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
@@ -42,7 +39,7 @@ export const getAIResponse = async (
 
     let config: any = {
       systemInstruction: getBaseSystemInstruction(privateDocs),
-      temperature: 0.1, // Baja temperatura para mayor rigor académico
+      temperature: 0.1,
     };
 
     if (mode === 'quiz' || mode === 'mindmap') {
@@ -84,13 +81,13 @@ export const getAIResponse = async (
     
     try {
       const parsedData = JSON.parse(text);
-      return { text: "Proceso completado.", data: parsedData };
+      return { text: "Operación finalizada.", data: parsedData };
     } catch (e) {
       return { text };
     }
 
   } catch (error: any) {
-    console.error("Gemini Error:", error);
+    console.error("Gemini API Error:", error);
     throw error;
   }
 };
@@ -101,7 +98,7 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Actúa como un profesor universitario explicando este concepto de forma magistral y amena: ${text}` }] }],
+      contents: [{ parts: [{ text: `Explica este concepto académico de forma magistral: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -111,7 +108,7 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
     });
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
   } catch (e) {
-    console.error("Audio Error:", e);
+    console.error("TTS Error:", e);
     return "";
   }
 };
