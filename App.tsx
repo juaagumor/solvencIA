@@ -248,6 +248,7 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
     } catch (err: any) {
+      console.error("Chat error:", err);
       setMessages(prev => [...prev, { role: 'model', text: `Error de conexión con la IA: ${err.message || 'Verifica tu API_KEY y conexión.'}`, timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
   };
