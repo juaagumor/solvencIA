@@ -19,6 +19,7 @@ import {
   ArrowLeft as BackIcon, 
   FileUp as UploadIcon, 
   Loader2 as LoaderIcon, 
+  Check as CheckIcon, 
   RefreshCw as RefreshIcon 
 } from 'lucide-react';
 
@@ -30,7 +31,7 @@ if (pdfjsLib) {
 const QuizViewer: React.FC<{ questions: QuizQuestion[] }> = ({ questions }) => {
   const [currentAnswers, setCurrentAnswers] = useState<Record<number, number>>({});
   const [showResults, setShowResults] = useState(false);
-  if (!questions || !Array.isArray(questions)) return <p className="text-red-400">Error cargando el test.</p>;
+  if (!questions || !Array.isArray(questions)) return <p className="text-red-400 font-bold">Error cargando el test.</p>;
 
   return (
     <div className="space-y-6">
@@ -78,7 +79,7 @@ const QuizViewer: React.FC<{ questions: QuizQuestion[] }> = ({ questions }) => {
 };
 
 const MindMapViewer: React.FC<{ data: ConceptMap }> = ({ data }) => {
-  if (!data || !data.core) return <p className="text-red-400">Error cargando el esquema.</p>;
+  if (!data || !data.core) return <p className="text-red-400 font-bold">Error cargando el esquema.</p>;
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center">
@@ -179,6 +180,71 @@ const App: React.FC = () => {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  const syncToFirebase = async () => {
+    if (firebaseConfig.projectId === "TU_PROJECT_ID") return alert("Configura Firebase en App.tsx para usar esta función.");
+    setIsSyncing(true);
+    try {
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+      const db = getFirestore(app);
+      const batch = writeBatch(db);
+      const allDocs = [...trainingDocs];
+      for (const d of allDocs) {
+        const docRef = doc(db, "knowledge", d.id);
+        batch.set(docRef, d);
+      }
+      await batch.commit();
+      alert("Biblioteca sincronizada con la nube con éxito.");
+      setTrainingDocs([]);
+      initFirebase();
+    } catch (err) { 
+      console.error(err);
+      alert("Error al sincronizar."); 
+    }
+    finally { setIsSyncing(false); }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    setIsProcessing(true);
+    const newDocs: DocumentSource[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        let text = "";
+        if (file.type === "application/pdf") {
+          const arrayBuffer = await file.arrayBuffer();
+          const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+          const pdf = await loadingTask.promise;
+          for (let p = 1; p <= pdf.numPages; p++) {
+            const page = await pdf.getPage(p);
+            const content = await page.getTextContent();
+            text += content.items.map((it: any) => it.str).join(" ") + "\n";
+          }
+        } else if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+          text = await file.text();
+        } else {
+          // Intentar leer cualquier archivo como texto plano si falla lo anterior
+          text = await file.text();
+        }
+        
+        if (text.trim()) {
+          newDocs.push({ 
+            id: `doc-${Date.now()}-${i}`, 
+            name: file.name, 
+            content: text.trim(), 
+            updatedAt: Date.now() 
+          });
+        }
+      } catch (err) { 
+        console.error("Error procesando archivo:", file.name, err);
+      }
+    }
+    setTrainingDocs(prev => [...prev, ...newDocs]);
+    setIsProcessing(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSend = async (customPrompt?: string, mode: any = 'text') => {
     const textToUse = customPrompt || inputValue;
     if (!textToUse.trim() || isLoading) return;
@@ -198,6 +264,7 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
     } catch (err: any) {
+      console.error("Error Gemini:", err);
       setMessages(prev => [...prev, { role: 'model', text: `Error de conexión con la IA. Por favor, verifica tu API_KEY. Detalle: ${err.message}`, timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
   };
@@ -278,7 +345,7 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 ))}
-                {isLoading && <div className="max-w-3xl mx-auto italic text-gray-600 animate-pulse text-xs uppercase font-black">Analizando...</div>}
+                {isLoading && <div className="max-w-3xl mx-auto italic text-gray-600 animate-pulse text-xs uppercase font-black">Analizando conocimiento...</div>}
               </div>
               <div ref={chatEndRef} />
             </div>
@@ -319,27 +386,90 @@ const App: React.FC = () => {
           <div className="flex-1 overflow-y-auto p-12 bg-[#080808] pt-24 custom-scrollbar pb-40">
             <div className="max-w-4xl mx-auto">
                <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 text-[10px] font-black uppercase tracking-widest">
-                  <BackIcon size={16} /> Volver
+                  <BackIcon size={16} /> Volver al Chat
                </button>
                <h2 className="text-6xl font-black text-white tracking-tighter mb-16 italic">Gestor Maestro</h2>
+               
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Bloque de Carga */}
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">Carga de Material</h3>
-                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all mb-6`}>
-                       {isProcessing ? <LoaderIcon size={32} className="text-[#f9c80e] animate-spin"/> : <UploadIcon size={32} className="text-gray-700"/>}
-                       <span className="text-[10px] font-black uppercase text-gray-500">Subir PDF / Word</span>
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic tracking-[0.2em]">1. Alimentar Conocimiento</h3>
+                    <div 
+                      onClick={() => fileInputRef.current?.click()} 
+                      className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer hover:bg-white/5 transition-all mb-6 min-h-[200px] group`}
+                    >
+                       {isProcessing ? (
+                         <LoaderIcon size={40} className="text-[#f9c80e] animate-spin"/>
+                       ) : (
+                         <UploadIcon size={40} className="text-gray-700 group-hover:text-[#a51d36] transition-colors"/>
+                       )}
+                       <div className="text-center">
+                         <span className="text-[10px] font-black uppercase text-gray-500 group-hover:text-gray-300">Añadir documentos locales</span>
+                         <p className="text-[8px] text-gray-600 mt-1">PDF, Word o Texto</p>
+                       </div>
                     </div>
+                    {trainingDocs.length > 0 && (
+                      <div className="mt-4 p-4 bg-black/20 rounded-xl border border-white/5">
+                        <p className="text-[10px] font-bold text-[#f9c80e] mb-2">{trainingDocs.length} Archivos cargados en memoria:</p>
+                        <ul className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
+                          {trainingDocs.map((d, idx) => (
+                            <li key={idx} className="text-[9px] text-gray-500 flex items-center justify-between">
+                              <span className="truncate">{d.name}</span>
+                              <CheckIcon size={10} className="text-green-500 shrink-0 ml-2" />
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Bloque de Sincronización */}
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl flex flex-col justify-between">
                     <div>
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">Sincronización</h3>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic tracking-[0.2em]">2. Control de Base de Datos</h3>
+                      <div className="space-y-4 mb-8">
+                        <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">Estado Nube:</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-black uppercase ${dbStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
+                              {dbStatus === 'connected' ? 'Conectado' : 'Sin Conexión'}
+                            </span>
+                            <div className={`w-2 h-2 rounded-full ${dbStatus === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl">
+                          <span className="text-[10px] text-gray-500 font-bold uppercase">Temas en Nube:</span>
+                          <span className="text-[10px] font-black text-white">{cloudDocs.length} temas</span>
+                        </div>
+                      </div>
                     </div>
-                    <button onClick={() => {}} disabled={isSyncing} className="w-full py-6 bg-[#a51d36] text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] disabled:opacity-20 transition-all">
-                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <RefreshIcon size={16}/>} Sincronizar
+                    
+                    <button 
+                      onClick={syncToFirebase} 
+                      disabled={isSyncing || trainingDocs.length === 0} 
+                      className={`w-full py-6 rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-3 shadow-2xl transition-all ${
+                        isSyncing || trainingDocs.length === 0 
+                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed' 
+                        : 'bg-[#a51d36] text-white hover:scale-[1.02] active:scale-95'
+                      }`}
+                    >
+                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <RefreshIcon size={16}/>} 
+                      {isSyncing ? 'Sincronizando...' : 'Publicar a la Biblioteca'}
                     </button>
+                    {trainingDocs.length === 0 && !isSyncing && (
+                      <p className="text-[8px] text-gray-600 text-center mt-4 italic">Carga archivos primero para habilitar la sincronización</p>
+                    )}
                   </div>
                </div>
-               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={() => {}} accept=".pdf,.docx,.txt" />
+               
+               <input 
+                 ref={fileInputRef} 
+                 type="file" 
+                 multiple 
+                 className="hidden" 
+                 onChange={handleFileUpload} 
+                 accept=".pdf,.docx,.txt" 
+               />
             </div>
           </div>
         )}
@@ -347,14 +477,22 @@ const App: React.FC = () => {
 
       {showPassModal && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center">
-           <div className="w-full max-w-sm text-center">
+           <div className="w-full max-w-sm text-center animate-in">
               <KeyIcon size={48} className="text-[#a51d36] mx-auto mb-10" />
-              <input type="password" autoFocus className="w-full bg-transparent border-b-2 border-white/10 py-4 text-center text-4xl font-black text-[#f9c80e] focus:outline-none" value={passInput} onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && verifyAdmin()} />
-              <p className="mt-8 text-[10px] text-gray-700 font-black uppercase tracking-[0.3em]">Acceso Restringido</p>
+              <input 
+                type="password" 
+                autoFocus 
+                className="w-full bg-transparent border-b-2 border-white/10 py-4 text-center text-4xl font-black text-[#f9c80e] focus:outline-none focus:border-[#a51d36] transition-colors" 
+                value={passInput} 
+                onChange={e => setPassInput(e.target.value)} 
+                onKeyDown={e => e.key === 'Enter' && verifyAdmin()} 
+              />
+              <p className="mt-8 text-[10px] text-gray-700 font-black uppercase tracking-[0.3em]">Acceso Restringido - Clave Maestra</p>
            </div>
         </div>
       )}
     </div>
   );
 };
+
 export default App;
