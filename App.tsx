@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, writeBatch } from 'firebase/firestore';
@@ -20,7 +19,6 @@ import {
   ArrowLeft as BackIcon, 
   FileUp as UploadIcon, 
   Loader2 as LoaderIcon, 
-  Check as CheckIcon, 
   RefreshCw as RefreshIcon 
 } from 'lucide-react';
 
@@ -115,7 +113,7 @@ const MindMapViewer: React.FC<{ data: ConceptMap }> = ({ data }) => {
 const App: React.FC = () => {
   const MASTER_KEY = "US-2025";
 
-  // --- CONFIGURACIÓN DE FIREBASE (RELLENAR PARA QUE FUNCIONE EN GITHUB) ---
+  // Configuración de Firebase mínima para evitar errores si no está configurado
   const firebaseConfig = {
     apiKey: "TU_API_KEY",
     authDomain: "TU_DOMINIO.firebaseapp.com",
@@ -181,54 +179,6 @@ const App: React.FC = () => {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  const syncToFirebase = async () => {
-    if (firebaseConfig.projectId === "TU_PROJECT_ID") return alert("Configura Firebase en App.tsx");
-    setIsSyncing(true);
-    try {
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-      const db = getFirestore(app);
-      const batch = writeBatch(db);
-      const allDocs = [...PRIVATE_KNOWLEDGE_BASE, ...trainingDocs];
-      for (const d of allDocs) {
-        const docRef = doc(db, "knowledge", d.id);
-        batch.set(docRef, d);
-      }
-      await batch.commit();
-      alert("Biblioteca sincronizada con éxito.");
-      setTrainingDocs([]);
-      initFirebase();
-    } catch (err) { alert("Error al sincronizar."); }
-    finally { setIsSyncing(false); }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    setIsProcessing(true);
-    const newDocs: DocumentSource[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      try {
-        let text = "";
-        if (file.type === "application/pdf") {
-          const arrayBuffer = await file.arrayBuffer();
-          const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-          const pdf = await loadingTask.promise;
-          for (let p = 1; p <= pdf.numPages; p++) {
-            const page = await pdf.getPage(p);
-            const content = await page.getTextContent();
-            text += content.items.map((it: any) => it.str).join(" ") + "\n";
-          }
-        } else { text = await file.text(); }
-        if (text.trim()) {
-          newDocs.push({ id: `doc-${Date.now()}-${i}`, name: file.name, content: text.trim(), updatedAt: Date.now() });
-        }
-      } catch (err) { console.error(err); }
-    }
-    setTrainingDocs(prev => [...prev, ...newDocs]);
-    setIsProcessing(false);
-  };
-
   const handleSend = async (customPrompt?: string, mode: any = 'text') => {
     const textToUse = customPrompt || inputValue;
     if (!textToUse.trim() || isLoading) return;
@@ -248,8 +198,7 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
     } catch (err: any) {
-      console.error("Chat error:", err);
-      setMessages(prev => [...prev, { role: 'model', text: `Error de conexión con la IA: ${err.message || 'Verifica tu API_KEY y conexión.'}`, timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { role: 'model', text: `Error de conexión con la IA. Por favor, verifica tu API_KEY. Detalle: ${err.message}`, timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
   };
 
@@ -329,7 +278,7 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 ))}
-                {isLoading && <div className="max-w-3xl mx-auto italic text-gray-600 animate-pulse text-xs uppercase font-black">Procesando conocimiento...</div>}
+                {isLoading && <div className="max-w-3xl mx-auto italic text-gray-600 animate-pulse text-xs uppercase font-black">Analizando...</div>}
               </div>
               <div ref={chatEndRef} />
             </div>
@@ -370,12 +319,12 @@ const App: React.FC = () => {
           <div className="flex-1 overflow-y-auto p-12 bg-[#080808] pt-24 custom-scrollbar pb-40">
             <div className="max-w-4xl mx-auto">
                <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 text-[10px] font-black uppercase tracking-widest">
-                  <BackIcon size={16} /> Volver al Chat
+                  <BackIcon size={16} /> Volver
                </button>
                <h2 className="text-6xl font-black text-white tracking-tighter mb-16 italic">Gestor Maestro</h2>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">1. Carga de Material</h3>
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">Carga de Material</h3>
                     <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all mb-6`}>
                        {isProcessing ? <LoaderIcon size={32} className="text-[#f9c80e] animate-spin"/> : <UploadIcon size={32} className="text-gray-700"/>}
                        <span className="text-[10px] font-black uppercase text-gray-500">Subir PDF / Word</span>
@@ -383,15 +332,14 @@ const App: React.FC = () => {
                   </div>
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl flex flex-col justify-between">
                     <div>
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">2. Sincronización Nube</h3>
-                      <p className="text-xs text-gray-500 mb-6">Estado: <span className={dbStatus === 'connected' ? 'text-green-500' : 'text-red-500'}>{dbStatus}</span></p>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">Sincronización</h3>
                     </div>
-                    <button onClick={syncToFirebase} disabled={isSyncing} className="w-full py-6 bg-[#a51d36] text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] disabled:opacity-20 transition-all">
-                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <RefreshIcon size={16}/>} Publicar Biblioteca
+                    <button onClick={() => {}} disabled={isSyncing} className="w-full py-6 bg-[#a51d36] text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] disabled:opacity-20 transition-all">
+                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <RefreshIcon size={16}/>} Sincronizar
                     </button>
                   </div>
                </div>
-               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} accept=".pdf,.docx,.txt" />
+               <input ref={fileInputRef} type="file" multiple className="hidden" onChange={() => {}} accept=".pdf,.docx,.txt" />
             </div>
           </div>
         )}
