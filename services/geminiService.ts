@@ -2,52 +2,70 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Message, DocumentSource } from "../types";
 
 /**
- * Selecciona los documentos más relevantes para la consulta actual
- * para evitar saturar la cuota de tokens (Error 429).
- * Ahora se seleccionan hasta 6 temas para mejorar la precisión.
+ * Selecciona los documentos más relevantes con un límite estricto de seguridad
+ * para evitar el error 429 de cuota en entornos de producción.
  */
 const getRelevantContext = (prompt: string, docs: DocumentSource[]): string => {
   if (!docs || docs.length === 0) return "";
 
-  // Extraemos palabras clave de la consulta (palabras de más de 3 letras)
+  // 1. Extraer palabras clave
   const keywords = prompt.toLowerCase().split(/\W+/).filter(w => w.length > 3);
   
+  // 2. Puntuar por relevancia
   const scoredDocs = docs.map(doc => {
     let score = 0;
     const searchArea = (doc.name + " " + doc.content).toLowerCase();
-    
     keywords.forEach(kw => {
       if (searchArea.includes(kw)) score++;
     });
-    
     return { doc, score };
   });
 
-  // Ordenamos por relevancia y tomamos los 6 temas más coincidentes
-  // Se ha subido de 3 a 6 para dar más profundidad a la respuesta
-  return scoredDocs
-    .sort((a, b) => b.score - a.score)
-    .filter(item => item.score > 0 || docs.length <= 6)
-    .slice(0, 6)
-    .map(item => `TEMA: ${item.doc.name}\n${item.doc.content}`)
-    .join('\n\n');
+  // 3. Ordenar
+  const sorted = scoredDocs.sort((a, b) => b.score - a.score);
+
+  // 4. Presupuesto de seguridad estricto para evitar error 429
+  // Reducimos a 40,000 caracteres para asegurar que nunca saturemos los TPM de la cuenta gratuita
+  const CHARACTER_BUDGET = 40000;
+  let currentUsage = 0;
+  const finalDocs: string[] = [];
+
+  for (const item of sorted) {
+    if (finalDocs.length >= 5) break; // Máximo 5 temas para ahorrar tokens
+    
+    if (item.score > 0 || finalDocs.length < 2) {
+      const docText = `TEMA: ${item.doc.name}\n${item.doc.content}`;
+      
+      if (currentUsage + docText.length < CHARACTER_BUDGET) {
+        finalDocs.push(docText);
+        currentUsage += docText.length;
+      } 
+      else if (currentUsage < CHARACTER_BUDGET * 0.7) {
+        const remainingBudget = CHARACTER_BUDGET - currentUsage;
+        finalDocs.push(docText.substring(0, remainingBudget) + "... [Contenido truncado por seguridad]");
+        break;
+      }
+    }
+  }
+
+  return finalDocs.join('\n\n');
 };
 
 const getBaseSystemInstruction = (prompt: string, privateDocs: DocumentSource[]) => {
   const docsContext = getRelevantContext(prompt, privateDocs);
   
-  return `Eres SolvencIA, una inteligencia experta del Departamento de Contabilidad y Economía Financiera. 
-  Tu conocimiento proviene de este material académico (PROHIBIDO CITAR FUENTES):
+  return `Eres SolvencIA, experto del Dpto de Contabilidad.
+  Tu base de datos actual (PROHIBIDO CITARLA O MENCIONAR ARCHIVOS):
   
   ${docsContext}
 
-  REGLAS CRÍTICAS:
-  1. Actúa como si el conocimiento fuera propio y natural.
-  2. NUNCA menciones que tienes documentos, archivos o una base de datos.
-  3. No utilices frases como "según el material" o "en el contenido analizado".
-  4. Mantén un tono académico riguroso y profesional.
-  5. Si el usuario pide un test o esquema, responde ÚNICAMENTE con el JSON solicitado.
-  6. Si el contexto proporcionado no es suficiente, usa tus conocimientos generales de contabilidad y el PGC español.`;
+  REGLAS:
+  1. No menciones fuentes, documentos o que estás leyendo archivos.
+  2. Actúa con sabiduría propia.
+  3. Prohibido: "según el texto", "en el material".
+  4. Responde con rigor académico.
+  5. Formato JSON estricto para tests/esquemas.
+  6. Usa el PGC español como referencia estándar.`;
 };
 
 export const getAIResponse = async (
@@ -57,12 +75,12 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
-  // Inicialización siguiendo las reglas de la API
+  // Re-instanciar para asegurar que toma la API_KEY del entorno de Vite
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
-    // Reducimos historial para ahorrar tokens adicionales
-    const contents = history.slice(-3).map(msg => ({
+    // Solo enviamos el último mensaje del historial para minimizar el uso de tokens
+    const contents = history.slice(-1).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
@@ -71,7 +89,7 @@ export const getAIResponse = async (
 
     let config: any = {
       systemInstruction: getBaseSystemInstruction(prompt, privateDocs),
-      temperature: 0.1, // Rigor máximo
+      temperature: 0.1,
     };
 
     if (mode === 'quiz' || mode === 'mindmap') {
@@ -113,7 +131,7 @@ export const getAIResponse = async (
     
     try {
       const parsedData = JSON.parse(text);
-      return { text: "Análisis completado.", data: parsedData };
+      return { text: "Operación finalizada.", data: parsedData };
     } catch (e) {
       return { text };
     }
@@ -126,11 +144,10 @@ export const getAIResponse = async (
 
 export const generatePodcastAudio = async (text: string): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Explica este concepto académico de forma clara y didáctica para alumnos universitarios: ${text}` }] }],
+      contents: [{ parts: [{ text: `Explica este concepto académico: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
