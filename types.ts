@@ -1,4 +1,3 @@
-
 export interface DocumentSource {
   id: string;
   name: string;
@@ -13,16 +12,11 @@ export interface QuizQuestion {
   explanation: string;
 }
 
-export interface ConceptMap {
-  core: string;
-  branches: { node: string; details: string[] }[];
-}
-
 export interface Message {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
-  type?: 'text' | 'quiz' | 'mindmap' | 'podcast';
+  type?: 'text' | 'quiz' | 'podcast';
   data?: any;
 }
 
