@@ -3,7 +3,9 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, 
   collection, 
-  getDocs 
+  getDocs,
+  addDoc,
+  serverTimestamp 
 } from 'firebase/firestore';
 import { Message, AppView, DocumentSource, QuizQuestion } from './types';
 import { getAIResponse, generatePodcastAudio } from './services/geminiService';
@@ -20,7 +22,9 @@ import {
   Settings as SettingsIcon, 
   ArrowLeft as BackIcon, 
   FileUp as UploadIcon, 
-  Loader2 as LoaderIcon
+  Loader2 as LoaderIcon,
+  BookOpen as BookIcon,
+  Search as SearchIcon
 } from 'lucide-react';
 
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
@@ -89,20 +93,28 @@ const App: React.FC = () => {
   const [cloudDocs, setCloudDocs] = useState<DocumentSource[]>([]);
   const [showPassModal, setShowPassModal] = useState(false);
   const [passInput, setPassInput] = useState('');
+  const [searchLibrary, setSearchLibrary] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const clickCount = useRef(0);
 
-  useEffect(() => { 
+  const fetchCloudDocs = async () => {
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     const db = getFirestore(app);
-    getDocs(collection(db, "knowledge")).then(snap => {
-      const docs: DocumentSource[] = [];
-      snap.forEach(d => docs.push(d.data() as DocumentSource));
-      setCloudDocs(docs);
+    const snap = await getDocs(collection(db, "knowledge"));
+    const docs: DocumentSource[] = [];
+    snap.forEach(d => {
+      const data = d.data();
+      docs.push({ id: d.id, ...data } as DocumentSource);
     });
+    setCloudDocs(docs);
+  };
+
+  useEffect(() => { 
+    fetchCloudDocs();
   }, []);
 
   useEffect(() => {
@@ -118,6 +130,54 @@ const App: React.FC = () => {
   useEffect(() => { 
     if (messages.length > 1) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
   }, [messages]);
+
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = content.items.map((item: any) => item.str);
+      fullText += strings.join(" ") + "\n";
+    }
+    return fullText;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    const db = getFirestore(app);
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let content = "";
+        if (file.type === "application/pdf") {
+          content = await extractTextFromPDF(file);
+        } else {
+          content = await file.text();
+        }
+
+        if (content.trim()) {
+          await addDoc(collection(db, "knowledge"), {
+            name: file.name,
+            content: content,
+            updatedAt: Date.now(),
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+      await fetchCloudDocs();
+    } catch (err) {
+      console.error("Error subiendo archivos:", err);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleSend = async (customPrompt?: string, mode: any = 'text') => {
     const textToUse = customPrompt || inputValue;
@@ -165,12 +225,15 @@ const App: React.FC = () => {
     } catch (e) { setIsPlayingAudio(false); }
   };
 
+  const filteredLibrary = cloudDocs.filter(doc => 
+    doc.name.toLowerCase().includes(searchLibrary.toLowerCase())
+  );
+
   return (
     <div className="flex h-screen bg-[#050505] text-gray-200 overflow-hidden font-sans">
       <main className="flex-1 flex flex-col bg-[#080808] relative">
         <header className="absolute top-0 left-0 p-10 flex items-center justify-between w-full z-40 bg-gradient-to-b from-[#080808] to-transparent pointer-events-none">
           <div className="pointer-events-auto cursor-pointer select-none" onClick={() => { if (++clickCount.current === 5) { setShowPassModal(true); clickCount.current = 0; } }}>
-            {/* LOGO SOLVENCIA REFINADO: AÚN MÁS FINO (FONT-NORMAL) Y CON GLITCH EXACTO */}
             <h1 className="font-normal text-[42px] text-white tracking-[-0.05em] leading-none select-none relative" 
                 style={{ 
                   textShadow: '2px 0 #ff0000, -2px 0 #00ffff',
@@ -223,7 +286,6 @@ const App: React.FC = () => {
             
             <div className="px-8 pb-10 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-8 z-50">
               <div className="max-w-4xl mx-auto flex items-end gap-3">
-                {/* BOTONES LATERALES: ALTURA FIJA DE 52PX CADA UNO + GAP DE 4PX = 108PX TOTAL */}
                 <div className="flex flex-col gap-1 h-[108px] justify-between mb-0 shrink-0">
                   <button onClick={() => handleSend('TEST', 'quiz')} className="flex items-center justify-center gap-2 px-4 h-[52px] bg-[#111] border border-white/5 rounded-xl hover:border-[#a51d36] hover:bg-[#a51d36]/10 text-gray-600 hover:text-white transition-all shadow-xl group">
                     <QuizIcon size={14} className="group-hover:text-[#f9c80e]" />
@@ -235,7 +297,6 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
-                {/* AREA DE TEXTO: ALTURA MÍNIMA DE 108PX PARA SINCRONIZACIÓN TOTAL CON LOS BOTONES */}
                 <div className="flex-1 relative group">
                   <textarea 
                     value={inputValue} 
@@ -254,17 +315,90 @@ const App: React.FC = () => {
         )}
 
         {view === AppView.ADMIN && (
-          <div className="flex-1 overflow-y-auto p-20 bg-[#080808] pt-48 custom-scrollbar">
-            <div className="max-w-5xl mx-auto">
-               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-3 text-gray-700 hover:text-white mb-12 text-[10px] font-black uppercase tracking-[0.4em] transition-colors">
-                  <BackIcon size={18} /> CERRAR PANEL
-               </button>
-               <h2 className="text-8xl font-black text-white tracking-tighter mb-16 italic opacity-20">PANEL MAESTRO</h2>
-               <div onClick={() => fileInputRef.current?.click()} className="border-4 border-dashed border-white/5 rounded-[4rem] p-32 flex flex-col items-center justify-center gap-8 cursor-pointer hover:bg-white/[0.02] hover:border-[#a51d36]/30 transition-all">
-                  <UploadIcon size={80} className="text-gray-900"/>
-                  <span className="text-[12px] font-black uppercase text-gray-600 tracking-[0.6em]">IMPORTAR CONOCIMIENTO PDF</span>
+          <div className="flex-1 overflow-y-auto p-10 md:p-20 bg-[#080808] pt-48 custom-scrollbar">
+            <div className="max-w-6xl mx-auto space-y-20 pb-20">
+               <div className="flex items-center justify-between">
+                 <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-3 text-gray-700 hover:text-white text-[10px] font-black uppercase tracking-[0.4em] transition-colors">
+                    <BackIcon size={18} /> VOLVER AL CHAT
+                 </button>
+                 <div className="flex items-center gap-4 text-gray-500 text-[10px] font-bold uppercase tracking-widest">
+                   <div className="w-2 h-2 rounded-full bg-[#a51d36] animate-pulse"></div>
+                   MODO CONFIGURACIÓN MAESTRA
+                 </div>
                </div>
-               <input ref={fileInputRef} type="file" multiple className="hidden" accept=".pdf,.txt" />
+
+               <header>
+                 <h2 className="text-8xl font-black text-white tracking-tighter italic opacity-20 leading-none">BIBLIOTECA</h2>
+                 <p className="text-gray-600 mt-4 max-w-2xl font-medium">Gestión de recursos externos. Solo se muestran los documentos importados en la nube.</p>
+               </header>
+
+               <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                 <div className="lg:col-span-1 space-y-6">
+                   <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#a51d36] mb-8">Acciones Rápidas</h3>
+                   <div onClick={() => !isUploading && fileInputRef.current?.click()} className={`group border-2 border-dashed border-white/5 rounded-[2.5rem] p-12 flex flex-col items-center justify-center gap-6 transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-white/[0.02] hover:border-[#a51d36]/30'}`}>
+                      <div className="p-6 bg-white/5 rounded-full group-hover:scale-110 transition-transform">
+                        {isUploading ? <LoaderIcon size={32} className="text-[#a51d36] animate-spin" /> : <UploadIcon size={32} className="text-gray-700 group-hover:text-[#a51d36]"/>}
+                      </div>
+                      <span className="text-[10px] font-black uppercase text-gray-600 tracking-[0.4em] text-center">{isUploading ? 'PROCESANDO...' : 'IMPORTAR PDF/TXT'}</span>
+                   </div>
+                   <input ref={fileInputRef} type="file" multiple className="hidden" accept=".pdf,.txt" onChange={handleFileUpload} />
+                   
+                   <div className="p-8 bg-white/5 rounded-[2rem] border border-white/5">
+                     <p className="text-[10px] font-black text-gray-500 uppercase mb-4 tracking-widest">Estado de la Nube</p>
+                     <div className="space-y-3">
+                       <div className="flex justify-between items-center text-xs">
+                         <span className="text-gray-400">Documentos Cloud:</span>
+                         <span className="text-white font-bold">{cloudDocs.length}</span>
+                       </div>
+                       <div className="w-full h-1 bg-white/5 rounded-full mt-4">
+                         <div className="w-full h-full bg-[#a51d36] rounded-full"></div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+
+                 <div className="lg:col-span-2 space-y-6">
+                   <div className="flex items-center justify-between mb-8">
+                     <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#a51d36]">Fuentes Cloud</h3>
+                     <div className="relative">
+                       <SearchIcon size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                       <input 
+                         type="text" 
+                         placeholder="BUSCAR EN NUBE..." 
+                         className="bg-white/5 border border-white/5 rounded-full py-2 pl-12 pr-6 text-[10px] font-bold focus:outline-none focus:border-[#a51d36]/50 transition-all w-64"
+                         value={searchLibrary}
+                         onChange={e => setSearchLibrary(e.target.value)}
+                       />
+                     </div>
+                   </div>
+
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[600px] overflow-y-auto pr-4 custom-scrollbar">
+                     {filteredLibrary.length > 0 ? filteredLibrary.map((doc) => (
+                       <div key={doc.id} className="p-6 bg-white/[0.03] border border-white/5 rounded-2xl hover:bg-white/[0.05] transition-all group relative overflow-hidden">
+                         <div className="absolute top-0 left-0 w-1 h-full bg-transparent group-hover:bg-[#a51d36] transition-all"></div>
+                         <div className="flex items-start gap-4">
+                           <div className="mt-1 p-2 bg-black/40 rounded-lg text-gray-600">
+                             <BookIcon size={16} />
+                           </div>
+                           <div className="flex-1">
+                             <p className="text-[11px] font-black text-white leading-tight uppercase tracking-tight line-clamp-2">{doc.name}</p>
+                             <p className="text-[9px] text-gray-600 mt-2 font-bold uppercase tracking-widest">ID: {doc.id}</p>
+                           </div>
+                         </div>
+                         <div className="mt-4 flex items-center justify-between">
+                            <span className="text-[8px] px-2 py-1 bg-white/5 rounded-md text-gray-500 font-bold uppercase">Cloud v1.0</span>
+                            <button className="text-[9px] font-black text-[#a51d36] uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">Ver Contenido</button>
+                         </div>
+                       </div>
+                     )) : (
+                       <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-800 gap-4 opacity-50">
+                         <BookIcon size={48} />
+                         <p className="text-[10px] font-black uppercase tracking-widest text-center">No hay documentos en la nube.<br/>Usa el botón de importar para comenzar.</p>
+                       </div>
+                     )}
+                   </div>
+                 </div>
+               </div>
             </div>
           </div>
         )}
@@ -272,7 +406,7 @@ const App: React.FC = () => {
 
       {showPassModal && (
         <div className="fixed inset-0 z-[100] bg-black/98 flex items-center justify-center backdrop-blur-3xl">
-           <div className="w-full max-w-sm text-center p-10">
+           <div className="w-full max-sm text-center p-10">
               <KeyIcon size={56} className="text-[#a51d36] mx-auto mb-12 animate-pulse" />
               <input type="password" autoFocus className="w-full bg-transparent border-b-2 border-white/10 py-8 text-center text-6xl font-black text-[#f9c80e] focus:outline-none focus:border-[#a51d36] transition-all tracking-tighter" value={passInput} onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (passInput === MASTER_KEY && (setIsAdmin(true), setView(AppView.ADMIN), setShowPassModal(false), setPassInput('')))} />
               <p className="mt-10 text-[11px] text-gray-800 font-black uppercase tracking-[0.8em]">ADMIN_ACCESS_ONLY</p>
