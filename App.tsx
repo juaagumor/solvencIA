@@ -117,12 +117,12 @@ const App: React.FC = () => {
 
   // --- CONFIGURACIÓN DE FIREBASE (RELLENAR PARA QUE FUNCIONE EN GITHUB) ---
   const firebaseConfig = {
-    apiKey: "TU_API_KEY",
-    authDomain: "TU_DOMINIO.firebaseapp.com",
-    projectId: "TU_PROJECT_ID",
-    storageBucket: "TU_BUCKET.appspot.com",
-    messagingSenderId: "TU_SENDER_ID",
-    appId: "TU_APP_ID"
+    apiKey: "AIzaSyCHEAxiJ6Onsi1ONx-ul8FKfliETUuC8UY",
+    authDomain: "solvencia-254a4.firebaseapp.com",
+    projectId: "solvencia-254a4",
+    storageBucket: "solvencia-254a4.firebasestorage.app",
+    messagingSenderId: "287316473049",
+    appId: "1:287316473049:web:5e456fd9fd113e628c3ac8"
   };
 
   const appName = "SolvencIA";
