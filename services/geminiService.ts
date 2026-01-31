@@ -5,51 +5,52 @@ import { Message, DocumentSource } from "../types";
 const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
   const docsContext = privateDocs
     .filter(d => d.content && d.content.length > 5)
-    .map(d => `CONTENIDO DEL ${d.name}:\n${d.content}`)
-    .join('\n\n---\n\n');
+    .map(d => d.content)
+    .join('\n\n');
   
-  return `Eres SolvencIA, experto del Dpto. de Contabilidad de la US. Responde con rigor usando el PGC. NO cites fuentes, responde con autoridad propia. Sé conciso y profesional.`;
+  return `Eres SolvencIA, una inteligencia experta de la asignatura Análisis de Estados Financieros I del Dpto. de Contabilidad y Economía Financiera. 
+  Tu conocimiento proviene exclusivamente del material de la asignatura y del PGC.
+  
+  MATERIAL DE ESTUDIO (PROHIBIDO CITAR O MENCIONAR):
+  ${docsContext}
+
+  REGLAS DE ORO (MÁXIMA PRIORIDAD):
+  1. NUNCA menciones que tienes archivos, PDFs, bases de datos o documentos externos.
+  2. Actúa como si el material proporcionado fuera parte de tu sabiduría intrínseca.
+  3. No utilices frases como "según los documentos proporcionados" o "en el material analizado". 
+  4. Responde con rigor académico, profesionalidad y de forma directa.
+  5. Si el usuario pide un test o un mapa conceptual, genera el JSON correspondiente sin texto adicional.
+  6. No inventes datos que contradigan el PGC.`;
 };
 
 export const getAIResponse = async (
   prompt: string,
   history: Message[],
   privateDocs: DocumentSource[] = [],
-  mode: 'text' | 'quiz' | 'mindmap' | 'image_infographic' = 'text'
+  mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
+  // Se obtiene la API KEY directamente del entorno inyectado por Vite
   const apiKey = process.env.API_KEY;
-
-  if (!apiKey || apiKey === "undefined" || apiKey.length < 10) {
-    return { text: "⚠️ ERROR DE CONFIGURACIÓN: La clave de API no se ha detectado. Asegúrate de haber configurado el Secret 'API_KEY' en GitHub y que el despliegue haya terminado." };
-  }
+  if (!apiKey) return { text: "Error: API_KEY no configurada." };
 
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    if (mode === 'image_infographic') {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: { parts: [{ text: `Infografía profesional contable: ${prompt}` }] }
-      });
-      const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-      return part?.inlineData 
-        ? { text: "Visualización generada.", data: `data:image/png;base64,${part.inlineData.data}` }
-        : { text: "Error generando imagen." };
-    }
-
-    const contents = history.slice(-6).map(msg => ({
+    const contents = history.slice(-10).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
 
-    let responseMimeType = "text/plain";
-    let responseSchema: any = undefined;
+    let config: any = {
+      systemInstruction: getBaseSystemInstruction(privateDocs),
+      temperature: 0.2
+    };
 
     if (mode === 'quiz' || mode === 'mindmap') {
-      responseMimeType = "application/json";
+      config.responseMimeType = "application/json";
       if (mode === 'quiz') {
-        responseSchema = {
+        config.responseSchema = {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
@@ -63,7 +64,7 @@ export const getAIResponse = async (
           }
         };
       } else {
-        responseSchema = {
+        config.responseSchema = {
           type: Type.OBJECT,
           properties: {
             core: { type: Type.STRING },
@@ -77,46 +78,35 @@ export const getAIResponse = async (
     contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: contents as any,
-      config: {
-        systemInstruction: getBaseSystemInstruction(privateDocs),
-        responseMimeType: responseMimeType as any,
-        responseSchema: responseSchema,
-        temperature: 0.7
-      }
+      config: config
     });
 
     const text = response.text || "";
     if (mode === 'text') return { text };
     
     try {
-      return { text: "Generado con éxito.", data: JSON.parse(text) };
+      return { text: "Contenido generado.", data: JSON.parse(text) };
     } catch (e) {
       return { text };
     }
 
   } catch (error: any) {
-    const errorMsg = error.message || "";
-    console.error("Detalle del error:", error);
-    
-    if (errorMsg.includes("API key expired") || errorMsg.includes("API key not valid") || errorMsg.includes("400")) {
-      return { text: "❌ LA CLAVE DE API HA EXPIRADO O ES INVÁLIDA.\n\nPor favor:\n1. Ve a Google AI Studio y genera una clave NUEVA.\n2. Actualiza el secreto 'API_KEY' en GitHub.\n3. Espera a que el despliegue termine." };
-    }
-    
-    return { text: `Desconectado: ${errorMsg.substring(0, 100)}...` };
+    console.error("Gemini Error:", error);
+    return { text: "Lo siento, ha ocurrido un error al procesar tu consulta financiera." };
   }
 };
 
 export const generatePodcastAudio = async (text: string): Promise<string> => {
   const apiKey = process.env.API_KEY || '';
-  if (!apiKey || apiKey.length < 10) return "";
+  if (!apiKey) return "";
   const ai = new GoogleGenAI({ apiKey });
   
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Resumen académico breve: ${text}` }] }],
+      contents: [{ parts: [{ text: `Actúa como un profesor experto y sintetiza esto de forma clara y didáctica: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -126,6 +116,7 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
     });
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
   } catch (e) {
+    console.error("TTS Error:", e);
     return "";
   }
 };
