@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { Message, AppView, DocumentSource, QuizQuestion, ConceptMap } from './types';
 import { getAIResponse, generatePodcastAudio } from './services/geminiService';
@@ -21,7 +21,7 @@ import {
   FileUp as UploadIcon, 
   Loader2 as LoaderIcon, 
   Check as CheckIcon, 
-  RefreshCw as SyncIcon 
+  RefreshCw as RefreshIcon 
 } from 'lucide-react';
 
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
@@ -32,7 +32,6 @@ if (pdfjsLib) {
 const QuizViewer: React.FC<{ questions: QuizQuestion[] }> = ({ questions }) => {
   const [currentAnswers, setCurrentAnswers] = useState<Record<number, number>>({});
   const [showResults, setShowResults] = useState(false);
-
   if (!questions || !Array.isArray(questions)) return <p className="text-red-400">Error cargando el test.</p>;
 
   return (
@@ -82,7 +81,6 @@ const QuizViewer: React.FC<{ questions: QuizQuestion[] }> = ({ questions }) => {
 
 const MindMapViewer: React.FC<{ data: ConceptMap }> = ({ data }) => {
   if (!data || !data.core) return <p className="text-red-400">Error cargando el esquema.</p>;
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center">
@@ -95,7 +93,6 @@ const MindMapViewer: React.FC<{ data: ConceptMap }> = ({ data }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {data.branches.map((branch, i) => (
           <div key={i} className="bg-[#111] p-5 rounded-[2rem] border border-white/5 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-[#a51d36]/5 rounded-full -mr-12 -mt-12 transition-all group-hover:scale-110" />
             <h4 className="text-sm font-black text-white mb-3 flex items-center gap-2">
               <span className="w-6 h-6 rounded-lg bg-[#a51d36]/20 flex items-center justify-center text-[10px] text-[#f9c80e]">{i+1}</span>
               {branch.node}
@@ -118,19 +115,18 @@ const MindMapViewer: React.FC<{ data: ConceptMap }> = ({ data }) => {
 const App: React.FC = () => {
   const MASTER_KEY = "US-2025";
 
-  // IMPORTANTE: RELLENA ESTOS DATOS DE FIREBASE AQUÍ PARA QUE LA SINCRONIZACIÓN FUNCIONE
-  const [config] = useState({
-    appName: "SolvencIA",
-    deptName: "Análisis de Estados Financieros I",
-    firebaseConfig: {
-      apiKey: "", // <--- TU API KEY DE FIREBASE
-      authDomain: "", // <--- TU AUTH DOMAIN
-      projectId: "", // <--- TU PROJECT ID
-      storageBucket: "",
-      messagingSenderId: "",
-      appId: ""
-    }
-  });
+  // --- CONFIGURACIÓN DE FIREBASE (RELLENAR PARA QUE FUNCIONE EN GITHUB) ---
+  const firebaseConfig = {
+    apiKey: "TU_API_KEY",
+    authDomain: "TU_DOMINIO.firebaseapp.com",
+    projectId: "TU_PROJECT_ID",
+    storageBucket: "TU_BUCKET.appspot.com",
+    messagingSenderId: "TU_SENDER_ID",
+    appId: "TU_APP_ID"
+  };
+
+  const appName = "SolvencIA";
+  const deptName = "Análisis de Estados Financieros I";
 
   const [view, setView] = useState<AppView>(AppView.CHATS);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -138,13 +134,11 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  
   const [trainingDocs, setTrainingDocs] = useState<DocumentSource[]>([]);
   const [cloudDocs, setCloudDocs] = useState<DocumentSource[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [dbStatus, setDbStatus] = useState<'idle' | 'connected' | 'error'>('idle');
-
   const [showPassModal, setShowPassModal] = useState(false);
   const [passInput, setPassInput] = useState('');
 
@@ -154,73 +148,64 @@ const App: React.FC = () => {
   const clickCount = useRef(0);
 
   useEffect(() => {
-    if (config.firebaseConfig.projectId) {
+    if (firebaseConfig.projectId !== "TU_PROJECT_ID") {
       initFirebase();
     }
-  }, [config.firebaseConfig.projectId]);
+  }, []);
+
+  const initFirebase = async () => {
+    try {
+      setDbStatus('idle');
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      const db = getFirestore(app);
+      const querySnapshot = await getDocs(collection(db, "knowledge"));
+      const docs: DocumentSource[] = [];
+      querySnapshot.forEach((doc) => { docs.push(doc.data() as DocumentSource); });
+      setCloudDocs(docs);
+      setDbStatus('connected');
+    } catch (err) {
+      console.error("Firebase Error:", err);
+      setDbStatus('error');
+    }
+  };
 
   useEffect(() => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado a fondo todo el material de la asignatura Análisis de Estados Financieros I para ayudarte a despejar dudas, resumir conceptos complejos y generar contenido de repaso en segundos.\n\n⚠️ Recuerda: Aunque mis respuestas se basan en el material oficial, siempre es recomendable contrastar los datos críticos con tu profesor. ¿En qué puedo ayudarte hoy?`,
+        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado el material de la asignatura para ayudarte.\n\n⚠️ Recuerda: Mis respuestas se basan en el material oficial. ¿En qué puedo ayudarte?`,
         timestamp: Date.now()
       }]);
     }
   }, []);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const initFirebase = async () => {
-    try {
-      setDbStatus('idle');
-      const app = initializeApp(config.firebaseConfig);
-      const db = getFirestore(app);
-      const querySnapshot = await getDocs(collection(db, "knowledge"));
-      const docs: DocumentSource[] = [];
-      querySnapshot.forEach((doc) => {
-        docs.push(doc.data() as DocumentSource);
-      });
-      setCloudDocs(docs);
-      setDbStatus('connected');
-    } catch (err) {
-      setDbStatus('error');
-    }
-  };
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const syncToFirebase = async () => {
-    if (!config.firebaseConfig.projectId) return alert("Primero debes rellenar las credenciales de Firebase en el código de App.tsx.");
+    if (firebaseConfig.projectId === "TU_PROJECT_ID") return alert("Configura Firebase en App.tsx");
     setIsSyncing(true);
     try {
-      const app = initializeApp(config.firebaseConfig);
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
       const db = getFirestore(app);
       const batch = writeBatch(db);
-      
       const allDocs = [...PRIVATE_KNOWLEDGE_BASE, ...trainingDocs];
       for (const d of allDocs) {
         const docRef = doc(db, "knowledge", d.id);
         batch.set(docRef, d);
       }
-
       await batch.commit();
-      alert(`Biblioteca actualizada. Ahora todos los alumnos tienen acceso a estos ${allDocs.length} documentos.`);
+      alert("Biblioteca sincronizada con éxito.");
       setTrainingDocs([]);
       initFirebase();
-    } catch (err: any) {
-      alert("Error al sincronizar. Verifica la conexión.");
-    } finally {
-      setIsSyncing(false);
-    }
+    } catch (err) { alert("Error al sincronizar."); }
+    finally { setIsSyncing(false); }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files) return;
     setIsProcessing(true);
     const newDocs: DocumentSource[] = [];
-    
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
@@ -234,59 +219,37 @@ const App: React.FC = () => {
             const content = await page.getTextContent();
             text += content.items.map((it: any) => it.str).join(" ") + "\n";
           }
-        } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-          const arrayBuffer = await file.arrayBuffer();
-          const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
-          text = result.value;
-        } else {
-          text = await file.text();
-        }
-        
+        } else { text = await file.text(); }
         if (text.trim()) {
-          newDocs.push({
-            id: `doc-${Date.now()}-${i}`,
-            name: file.name,
-            content: text.trim(),
-            updatedAt: Date.now()
-          });
+          newDocs.push({ id: `doc-${Date.now()}-${i}`, name: file.name, content: text.trim(), updatedAt: Date.now() });
         }
       } catch (err) { console.error(err); }
     }
-    
-    if (newDocs.length > 0) {
-      setTrainingDocs(prev => [...prev, ...newDocs]);
-    }
+    setTrainingDocs(prev => [...prev, ...newDocs]);
     setIsProcessing(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSend = async (customPrompt?: string, mode: any = 'text') => {
     const textToUse = customPrompt || inputValue;
     if (!textToUse.trim() || isLoading) return;
-
     if (!customPrompt) {
       setMessages(prev => [...prev, { role: 'user', text: textToUse, timestamp: Date.now() }]);
       setInputValue('');
     }
     setIsLoading(true);
-
     try {
       const currentKnowledge = [...PRIVATE_KNOWLEDGE_BASE, ...cloudDocs, ...trainingDocs];
       if (mode === 'podcast') {
         const scriptRes = await getAIResponse(`Genera una síntesis académica de: ${textToUse}`, messages, currentKnowledge, 'text');
         const audioBase64 = await generatePodcastAudio(scriptRes.text);
-        if (audioBase64) {
-          setMessages(prev => [...prev, { role: 'model', text: "Resumen de audio generado.", type: 'podcast', data: audioBase64, timestamp: Date.now() }]);
-        }
+        if (audioBase64) setMessages(prev => [...prev, { role: 'model', text: "Audio generado.", type: 'podcast', data: audioBase64, timestamp: Date.now() }]);
       } else {
         const res = await getAIResponse(textToUse, messages, currentKnowledge, mode);
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'model', text: "Error de conexión con SolvencIA.", timestamp: Date.now() }]);
-    } finally {
-      setIsLoading(false);
-    }
+      setMessages(prev => [...prev, { role: 'model', text: "Error de conexión con la IA.", timestamp: Date.now() }]);
+    } finally { setIsLoading(false); }
   };
 
   const playAudio = async (base64: string) => {
@@ -329,15 +292,15 @@ const App: React.FC = () => {
             if (clickCount.current === 5) { setShowPassModal(true); clickCount.current = 0; }
           }}>
             <div className="flex flex-col">
-              <h1 className="font-black text-2xl text-white leading-none tracking-tight">{config.appName}</h1>
+              <h1 className="font-black text-2xl text-white leading-none tracking-tight">{appName}</h1>
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-[10px] text-[#a51d36] font-black uppercase tracking-tighter">{config.deptName}</p>
-                {dbStatus === 'connected' && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" title="Nube Conectada" />}
+                <p className="text-[10px] text-[#a51d36] font-black uppercase tracking-tighter">{deptName}</p>
+                {dbStatus === 'connected' && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
               </div>
             </div>
           </div>
           {isAdmin && (
-            <button onClick={() => setView(view === AppView.ADMIN ? AppView.CHATS : AppView.ADMIN)} className="pointer-events-auto p-3 bg-white/5 rounded-2xl border border-white/10 text-gray-400 hover:text-white transition-all shadow-xl">
+            <button onClick={() => setView(view === AppView.ADMIN ? AppView.CHATS : AppView.ADMIN)} className="pointer-events-auto p-3 bg-white/5 rounded-2xl border border-white/10 text-gray-400 hover:text-white transition-all">
               {view === AppView.ADMIN ? <XIcon size={20} /> : <SettingsIcon size={20} />}
             </button>
           )}
@@ -356,51 +319,39 @@ const App: React.FC = () => {
                        msg.type === 'mindmap' ? <MindMapViewer data={msg.data} /> :
                        msg.type === 'podcast' ? (
                         <div className="flex items-center gap-5 p-2">
-                          <button onClick={() => playAudio(msg.data)} className={`p-5 rounded-2xl transition-all ${isPlayingAudio ? 'bg-gray-800' : 'bg-[#f9c80e] hover:scale-105'} text-black shadow-xl`}>
+                          <button onClick={() => playAudio(msg.data)} className={`p-5 rounded-2xl ${isPlayingAudio ? 'bg-gray-800' : 'bg-[#f9c80e]'} text-black shadow-xl`}>
                             {isPlayingAudio ? <SpeakerIcon size={24} className="animate-pulse" /> : <PlayIcon size={24} />}
                           </button>
-                          <div className="space-y-0.5">
-                             <p className="text-[10px] font-black uppercase text-[#f9c80e] tracking-widest">Audio Académico</p>
-                             <p className="text-sm font-bold text-white">Escuchar resumen</p>
-                          </div>
+                          <p className="text-sm font-bold text-white">Escuchar síntesis</p>
                         </div>
                        ) : <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>}
                     </div>
                   </div>
                 ))}
-                {isLoading && (
-                  <div className="flex justify-start animate-pulse">
-                    <div className="bg-[#121212] p-5 rounded-3xl border border-white/5 text-[9px] font-black text-gray-700 uppercase tracking-widest">Consultando material oficial...</div>
-                  </div>
-                )}
+                {isLoading && <div className="max-w-3xl mx-auto italic text-gray-600 animate-pulse text-xs uppercase font-black">Procesando conocimiento...</div>}
               </div>
               <div ref={chatEndRef} />
             </div>
             
-            <div className="px-8 pb-8 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-12">
+            <div className="px-8 pb-8 bg-gradient-to-t from-[#050505] to-transparent pt-12">
               <div className="max-w-3xl mx-auto">
                 <div className="flex flex-wrap gap-2 mb-6 justify-center">
-                  {[
-                    { id: 'quiz', name: 'Test Rápido', prompt: 'Genera un test sobre: ', icon: QuizIcon, color: 'text-yellow-500' },
-                    { id: 'mindmap', name: 'Esquema', prompt: 'Haz un mapa conceptual de: ', icon: MindmapIcon, color: 'text-cyan-500' },
-                    { id: 'podcast', name: 'Audio', prompt: 'Explícame en audio: ', icon: AudioIcon, color: 'text-purple-500' },
-                  ].map(tool => (
-                    <button key={tool.id} onClick={() => handleSend(tool.prompt + (inputValue || "los estados financieros"), tool.id as any)} className="flex items-center gap-2 px-5 py-3 bg-[#111] border border-white/5 rounded-2xl hover:border-[#a51d36]/40 transition-all text-[10px] font-black uppercase tracking-widest text-gray-500">
-                      <tool.icon size={14} className={tool.color} /> <span>{tool.name}</span>
+                  {['Test Rápido', 'Esquema', 'Audio'].map((name, i) => (
+                    <button key={i} onClick={() => handleSend(`${name} de: ${inputValue || "estados financieros"}`, ['quiz', 'mindmap', 'podcast'][i] as any)} className="px-5 py-3 bg-[#111] border border-white/5 rounded-2xl text-[10px] font-black uppercase text-gray-500 hover:border-[#a51d36]/40 transition-all">
+                      {name}
                     </button>
                   ))}
                 </div>
-                
                 <div className="relative group">
                   <textarea 
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                    placeholder="Escribe tu duda sobre Análisis de Estados Financieros..."
-                    className="w-full bg-[#111] border border-white/5 rounded-[2.5rem] min-h-[140px] pt-8 pb-16 pl-10 pr-24 focus:outline-none focus:ring-2 focus:ring-[#a51d36]/20 text-lg transition-all shadow-2xl placeholder:text-gray-800 resize-none custom-scrollbar"
+                    placeholder="Escribe tu duda académica..."
+                    className="w-full bg-[#111] border border-white/5 rounded-[2.5rem] min-h-[140px] pt-8 pb-16 pl-10 pr-24 focus:outline-none focus:ring-2 focus:ring-[#a51d36]/20 text-lg transition-all shadow-2xl placeholder:text-gray-800 resize-none"
                   />
                   <div className="absolute right-6 bottom-6">
-                    <button onClick={() => handleSend()} disabled={isLoading} className="p-5 bg-[#a51d36] text-white rounded-3xl transition-all hover:scale-105 active:scale-95 shadow-2xl disabled:opacity-30">
+                    <button onClick={() => handleSend()} disabled={isLoading} className="p-5 bg-[#a51d36] text-white rounded-3xl hover:scale-105 active:scale-95 disabled:opacity-30 transition-all">
                       <SendIcon size={28}/>
                     </button>
                   </div>
@@ -413,88 +364,44 @@ const App: React.FC = () => {
         {view === AppView.ADMIN && (
           <div className="flex-1 overflow-y-auto p-12 bg-[#080808] pt-24 custom-scrollbar pb-40">
             <div className="max-w-4xl mx-auto">
-               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 transition-colors uppercase text-[10px] font-black tracking-widest">
-                  <BackIcon size={16} /> Volver al Chat
+               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 text-[10px] font-black uppercase">
+                  <BackIcon size={16} /> Volver
                </button>
-               
-               <h2 className="text-6xl font-black text-white tracking-tighter mb-4 italic">Gestor de Contenidos</h2>
-               <p className="text-gray-500 mb-16 text-xl max-w-2xl">Alimenta la inteligencia de la asignatura subiendo material oficial para todos los alumnos.</p>
-
+               <h2 className="text-6xl font-black text-white tracking-tighter mb-16 italic">Gestor Maestro</h2>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* CARGA DE ARCHIVOS */}
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6 italic">1. Carga de Material</h3>
-                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all mb-6`}>
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">1. Carga de Material</h3>
+                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all`}>
                        {isProcessing ? <LoaderIcon size={32} className="text-[#f9c80e] animate-spin"/> : <UploadIcon size={32} className="text-gray-700"/>}
-                       <span className="text-[10px] font-black uppercase text-gray-500">Seleccionar PDF / Word</span>
+                       <span className="text-[10px] font-black uppercase text-gray-500">Subir PDF</span>
                     </div>
-                    <p className="text-[10px] text-gray-600 leading-relaxed">Sube los documentos que quieres que la IA conozca. Se procesarán localmente antes de subirlos a la nube.</p>
                   </div>
-
-                  {/* SINCRONIZACIÓN */}
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl flex flex-col justify-between">
                     <div>
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6 italic">2. Publicación Global</h3>
-                      <div className="space-y-4 mb-8">
-                        <div className="flex items-center justify-between p-4 bg-black/40 rounded-xl">
-                          <span className="text-xs text-gray-400">Estado de Red:</span>
-                          <span className={`text-[10px] font-black uppercase ${dbStatus === 'connected' ? 'text-green-500' : 'text-red-500'}`}>
-                            {dbStatus === 'connected' ? 'Sincronizado' : 'Error'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-4 bg-black/40 rounded-xl">
-                          <span className="text-xs text-gray-400">Docs en Nube:</span>
-                          <span className="text-xs font-black text-white">{cloudDocs.length}</span>
-                        </div>
-                      </div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">2. Sincronización Nube</h3>
+                      <p className="text-xs text-gray-500 mb-6">Estado: <span className={dbStatus === 'connected' ? 'text-green-500' : 'text-red-500'}>{dbStatus}</span></p>
                     </div>
-                    <button onClick={syncToFirebase} disabled={isSyncing || trainingDocs.length === 0} className="w-full py-6 bg-[#a51d36] text-white rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] active:scale-95 disabled:opacity-20 transition-all">
-                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <SyncIcon size={16}/>} Actualizar Biblioteca
+                    <button onClick={syncToFirebase} disabled={isSyncing} className="w-full py-6 bg-[#a51d36] text-white rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] disabled:opacity-20 transition-all">
+                      {isSyncing ? <LoaderIcon size={16} className="animate-spin"/> : <RefreshIcon size={16}/>} Publicar Biblioteca
                     </button>
                   </div>
                </div>
-
-               {/* LISTADO DE ARCHIVOS */}
-               <div className="mt-12 bg-black/40 p-10 rounded-[3rem] border border-white/5">
-                  <div className="flex items-center justify-between mb-10">
-                    <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Documentos Activos en el Sistema</h4>
-                    <span className="px-3 py-1 bg-white/5 rounded-full text-[9px] font-black text-gray-600 uppercase">Biblioteca Total: {cloudDocs.length + trainingDocs.length}</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {trainingDocs.map(d => (
-                      <div key={d.id} className="p-4 bg-[#a51d36]/10 rounded-2xl border border-[#a51d36]/20 text-[10px] font-bold text-[#f9c80e] flex items-center gap-3 animate-pulse">
-                        <LoaderIcon size={12} /> <span className="truncate">{d.name}</span>
-                      </div>
-                    ))}
-                    {cloudDocs.map(d => (
-                      <div key={d.id} className="p-4 bg-[#111] rounded-2xl border border-white/5 text-[10px] font-bold text-gray-600 truncate flex items-center gap-3">
-                        <CheckIcon size={12} className="text-green-500" /> {d.name}
-                      </div>
-                    ))}
-                    {cloudDocs.length === 0 && trainingDocs.length === 0 && (
-                      <p className="col-span-full py-10 text-center text-gray-800 text-[10px] font-black uppercase tracking-widest italic">No hay material cargado en la base de datos.</p>
-                    )}
-                  </div>
-               </div>
-               
                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} accept=".pdf,.docx,.txt" />
             </div>
           </div>
         )}
       </main>
 
-      {/* MODAL PASSWORD */}
       {showPassModal && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center">
-           <div className="w-full max-sm:px-6 max-w-sm text-center">
+           <div className="w-full max-w-sm text-center">
               <KeyIcon size={48} className="text-[#a51d36] mx-auto mb-10" />
               <input type="password" autoFocus className="w-full bg-transparent border-b-2 border-white/10 py-4 text-center text-4xl font-black text-[#f9c80e] focus:outline-none" value={passInput} onChange={e => setPassInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && verifyAdmin()} />
-              <p className="mt-8 text-[10px] text-gray-700 font-black uppercase tracking-[0.3em]">Acceso Maestro SolvencIA</p>
+              <p className="mt-8 text-[10px] text-gray-700 font-black uppercase tracking-[0.3em]">Acceso Restringido</p>
            </div>
         </div>
       )}
     </div>
   );
 };
-
 export default App;
