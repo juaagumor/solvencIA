@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
@@ -102,15 +103,19 @@ const App: React.FC = () => {
   const clickCount = useRef(0);
 
   const fetchCloudDocs = async () => {
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    const db = getFirestore(app);
-    const snap = await getDocs(collection(db, "knowledge"));
-    const docs: DocumentSource[] = [];
-    snap.forEach(d => {
-      const data = d.data();
-      docs.push({ id: d.id, ...data } as DocumentSource);
-    });
-    setCloudDocs(docs);
+    try {
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+      const db = getFirestore(app);
+      const snap = await getDocs(collection(db, "knowledge"));
+      const docs: DocumentSource[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        docs.push({ id: d.id, ...data } as DocumentSource);
+      });
+      setCloudDocs(docs);
+    } catch (e) {
+      console.error("Fallo al conectar con la biblioteca cloud");
+    }
   };
 
   useEffect(() => { 
@@ -203,7 +208,8 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'model', text: `Servicio temporalmente limitado. El sistema intentará recuperarse automáticamente.`, timestamp: Date.now() }]);
+      console.error("Fallo de IA:", err);
+      setMessages(prev => [...prev, { role: 'model', text: `Servicio temporalmente limitado. Esto suele deberse a la cuota de la API o falta de clave de acceso. El sistema intentará recuperarse automáticamente.`, timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
   };
 
@@ -234,6 +240,7 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col bg-[#080808] relative">
         <header className="absolute top-0 left-0 p-10 flex items-center justify-between w-full z-40 bg-gradient-to-b from-[#080808] to-transparent pointer-events-none">
           <div className="pointer-events-auto cursor-pointer select-none" onClick={() => { if (++clickCount.current === 5) { setShowPassModal(true); clickCount.current = 0; } }}>
+            {/* LOGO BLINDADO: font-normal + glitch */}
             <h1 className="font-normal text-[42px] text-white tracking-[-0.05em] leading-none select-none relative" 
                 style={{ 
                   textShadow: '2px 0 #ff0000, -2px 0 #00ffff',
@@ -286,6 +293,7 @@ const App: React.FC = () => {
             
             <div className="px-8 pb-10 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-8 z-50">
               <div className="max-w-4xl mx-auto flex items-end gap-3">
+                {/* BOTONES LATERALES: h-[52px] */}
                 <div className="flex flex-col gap-1 h-[108px] justify-between mb-0 shrink-0">
                   <button onClick={() => handleSend('TEST', 'quiz')} className="flex items-center justify-center gap-2 px-4 h-[52px] bg-[#111] border border-white/5 rounded-xl hover:border-[#a51d36] hover:bg-[#a51d36]/10 text-gray-600 hover:text-white transition-all shadow-xl group">
                     <QuizIcon size={14} className="group-hover:text-[#f9c80e]" />
@@ -297,6 +305,7 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
+                {/* TEXTAREA: min-h-[108px] */}
                 <div className="flex-1 relative group">
                   <textarea 
                     value={inputValue} 
