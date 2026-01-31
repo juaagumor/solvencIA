@@ -1,23 +1,53 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Message, DocumentSource } from "../types";
 
-const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
-  // Solo incluimos contenido relevante para no saturar la cuota de tokens
-  const docsContext = privateDocs
-    .filter(d => d.content && d.content.length > 5)
-    .map(d => `TEMA: ${d.name}\n${d.content}`)
-    .join('\n\n');
+/**
+ * Selecciona los documentos más relevantes para la consulta actual
+ * para evitar saturar la cuota de tokens (Error 429).
+ * Ahora se seleccionan hasta 6 temas para mejorar la precisión.
+ */
+const getRelevantContext = (prompt: string, docs: DocumentSource[]): string => {
+  if (!docs || docs.length === 0) return "";
+
+  // Extraemos palabras clave de la consulta (palabras de más de 3 letras)
+  const keywords = prompt.toLowerCase().split(/\W+/).filter(w => w.length > 3);
   
-  return `Eres SolvencIA, experto en Análisis de Estados Financieros I.
-  Usa este material como base de tu sabiduría (PROHIBIDO CITAR FUENTES):
+  const scoredDocs = docs.map(doc => {
+    let score = 0;
+    const searchArea = (doc.name + " " + doc.content).toLowerCase();
+    
+    keywords.forEach(kw => {
+      if (searchArea.includes(kw)) score++;
+    });
+    
+    return { doc, score };
+  });
+
+  // Ordenamos por relevancia y tomamos los 6 temas más coincidentes
+  // Se ha subido de 3 a 6 para dar más profundidad a la respuesta
+  return scoredDocs
+    .sort((a, b) => b.score - a.score)
+    .filter(item => item.score > 0 || docs.length <= 6)
+    .slice(0, 6)
+    .map(item => `TEMA: ${item.doc.name}\n${item.doc.content}`)
+    .join('\n\n');
+};
+
+const getBaseSystemInstruction = (prompt: string, privateDocs: DocumentSource[]) => {
+  const docsContext = getRelevantContext(prompt, privateDocs);
+  
+  return `Eres SolvencIA, una inteligencia experta del Departamento de Contabilidad y Economía Financiera. 
+  Tu conocimiento proviene de este material académico (PROHIBIDO CITAR FUENTES):
+  
   ${docsContext}
 
-  REGLAS:
-  1. No menciones archivos, documentos o bases de datos. Actúa como si el conocimiento fuera tuyo.
-  2. NUNCA uses frases como "según el material" o "en los documentos".
-  3. Sé académico, directo y preciso.
-  4. Para tests o esquemas, responde SOLO el JSON.
-  5. Si hay dudas, prioriza el PGC español.`;
+  REGLAS CRÍTICAS:
+  1. Actúa como si el conocimiento fuera propio y natural.
+  2. NUNCA menciones que tienes documentos, archivos o una base de datos.
+  3. No utilices frases como "según el material" o "en el contenido analizado".
+  4. Mantén un tono académico riguroso y profesional.
+  5. Si el usuario pide un test o esquema, responde ÚNICAMENTE con el JSON solicitado.
+  6. Si el contexto proporcionado no es suficiente, usa tus conocimientos generales de contabilidad y el PGC español.`;
 };
 
 export const getAIResponse = async (
@@ -27,10 +57,12 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
+  // Inicialización siguiendo las reglas de la API
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
-    const contents = history.slice(-5).map(msg => ({ // Reducimos historial para ahorrar tokens
+    // Reducimos historial para ahorrar tokens adicionales
+    const contents = history.slice(-3).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
@@ -38,8 +70,8 @@ export const getAIResponse = async (
     contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     let config: any = {
-      systemInstruction: getBaseSystemInstruction(privateDocs),
-      temperature: 0.1,
+      systemInstruction: getBaseSystemInstruction(prompt, privateDocs),
+      temperature: 0.1, // Rigor máximo
     };
 
     if (mode === 'quiz' || mode === 'mindmap') {
@@ -81,7 +113,7 @@ export const getAIResponse = async (
     
     try {
       const parsedData = JSON.parse(text);
-      return { text: "Operación finalizada.", data: parsedData };
+      return { text: "Análisis completado.", data: parsedData };
     } catch (e) {
       return { text };
     }
@@ -98,7 +130,7 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Explica este concepto académico de forma magistral: ${text}` }] }],
+      contents: [{ parts: [{ text: `Explica este concepto académico de forma clara y didáctica para alumnos universitarios: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
