@@ -140,7 +140,7 @@ const App: React.FC = () => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado a fondo todo el material de la asignatura para ayudarte a despejar dudas y repasar conceptos.\n\n¿En qué puedo ayudarte hoy?`,
+        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado a fondo todo el material de la asignatura para ayudarte a despejar dudas y repasar conceptos. Ten en cuenta que, como IA, puedo cometer errores; verifica siempre los datos críticos.\n\n¿En qué puedo ayudarte hoy?`,
         timestamp: Date.now()
       }]);
     }
@@ -312,7 +312,7 @@ const App: React.FC = () => {
           }}>
             <h1 className="font-black text-4xl text-white tracking-tighter">{appName}</h1>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-[11px] text-[#a51d36] font-black uppercase tracking-widest">ANÁLISIS DE ESTADOS FINANCIEROS I</p>
+              <p className="text-[11px] text-[#a51d36] font-black uppercase tracking-tight">ANÁLISIS DE ESTADOS FINANCIEROS I</p>
               <div className="w-2 h-2 rounded-full bg-green-600 shadow-[0_0_8px_rgba(22,163,74,0.6)]" />
             </div>
           </div>
