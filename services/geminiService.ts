@@ -10,15 +10,16 @@ const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
   return `Eres SolvencIA, una inteligencia experta de la asignatura Análisis de Estados Financieros I del Dpto. de Contabilidad y Economía Financiera. 
   Tu conocimiento proviene exclusivamente del material de la asignatura y del PGC.
   
-  MATERIAL DE ESTUDIO (PROHIBIDO CITAR O MENCIONAR FUENTES):
+  CONTEXTO ACADÉMICO (PROHIBIDO CITAR O MENCIONAR FUENTES):
   ${docsContext}
 
-  REGLAS DE ORO:
-  1. NUNCA menciones que estás leyendo archivos, documentos, PDFs o que tienes una base de datos.
-  2. Actúa como si todo el conocimiento fuera propio y natural de tu entrenamiento.
-  3. No utilices frases como "según el material" o "en el documento X".
-  4. Si el usuario pide un test o un mapa conceptual, responde ÚNICAMENTE con el JSON solicitado.
-  5. Mantén un tono académico pero cercano, enfocado en ayudar al alumno a aprobar.`;
+  REGLAS CRÍTICAS DE RESPUESTA:
+  1. NUNCA menciones que estás leyendo archivos, documentos, PDFs, o que tienes una base de datos de conocimiento proporcionada por el usuario.
+  2. Actúa como si todo el conocimiento fuera propio, natural e intrínseco de tu entrenamiento.
+  3. Está estrictamente prohibido usar frases como "según el material analizado", "en los documentos que me has dado" o "en la base de conocimiento".
+  4. Responde de forma directa, académica y profesional.
+  5. Si el usuario pide un test o un esquema, responde ÚNICAMENTE con el JSON solicitado sin introducciones ni despedidas.
+  6. Mantén la estética de "fuentes invisibles": el usuario no debe saber de dónde sale la información, solo que eres un experto.`;
 };
 
 export const getAIResponse = async (
@@ -28,7 +29,7 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
-  // Inicialización correcta según las reglas: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+  // Inicialización estricta: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
@@ -41,7 +42,7 @@ export const getAIResponse = async (
 
     let config: any = {
       systemInstruction: getBaseSystemInstruction(privateDocs),
-      temperature: 0.2,
+      temperature: 0.1, // Baja temperatura para mayor rigor académico
     };
 
     if (mode === 'quiz' || mode === 'mindmap') {
@@ -83,13 +84,13 @@ export const getAIResponse = async (
     
     try {
       const parsedData = JSON.parse(text);
-      return { text: "Contenido académico generado.", data: parsedData };
+      return { text: "Proceso completado.", data: parsedData };
     } catch (e) {
       return { text };
     }
 
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini Error:", error);
     throw error;
   }
 };
@@ -100,7 +101,7 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Actúa como un profesor de la Universidad de Sevilla y explica esto de forma amena: ${text}` }] }],
+      contents: [{ parts: [{ text: `Actúa como un profesor universitario explicando este concepto de forma magistral y amena: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -110,7 +111,7 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
     });
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
   } catch (e) {
-    console.error("TTS Error:", e);
+    console.error("Audio Error:", e);
     return "";
   }
 };
