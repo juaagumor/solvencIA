@@ -27,81 +27,86 @@ export const getAIResponse = async (
   privateDocs: DocumentSource[] = [],
   mode: 'text' | 'quiz' | 'mindmap' | 'image_infographic' = 'text'
 ): Promise<{text: string, data?: any}> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey || apiKey === '') {
+    console.error("ERROR: API_KEY no configurada. Verifica los Secrets de GitHub.");
+    return { text: "Error de configuración: La clave de API no está presente en el servidor." };
+  }
 
-  // MODO IMAGEN: Infografía Visual
-  if (mode === 'image_infographic') {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: `Crea una infografía educativa técnica y minimalista sobre el siguiente concepto contable: ${prompt}. Usa colores sobrios (azul, granate, blanco) y un diseño de alta calidad para universidad.` }]
-      },
-      config: {
-        imageConfig: { aspectRatio: "1:1" }
-      }
-    });
+  const ai = new GoogleGenAI({ apiKey });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
+  try {
+    // MODO IMAGEN: Infografía Visual
+    if (mode === 'image_infographic') {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [{ text: `Crea una infografía educativa técnica y minimalista sobre el siguiente concepto contable: ${prompt}. Usa colores sobrios (azul, granate, blanco) y un diseño de alta calidad para universidad.` }]
+        },
+        config: {
+          imageConfig: { aspectRatio: "1:1" }
+        }
+      });
+
+      const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+      if (part?.inlineData) {
         return { 
           text: "He diseñado esta infografía visual para que visualices mejor los conceptos clave.", 
           data: `data:image/png;base64,${part.inlineData.data}` 
         };
       }
     }
-  }
 
-  // MODOS DE TEXTO Y JSON
-  const contents = history.map(msg => ({
-    role: msg.role === 'user' ? 'user' : 'model',
-    parts: [{ text: msg.text }]
-  }));
+    // MODOS DE TEXTO Y JSON
+    const contents = history.map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.text }]
+    }));
 
-  let finalPrompt = prompt;
-  let responseMimeType = "text/plain";
-  let responseSchema: any = undefined;
+    let finalPrompt = prompt;
+    let responseMimeType = "text/plain";
+    let responseSchema: any = undefined;
 
-  if (mode === 'quiz') {
-    finalPrompt = `Genera un test de 3 preguntas sobre: ${prompt}. Responde solo en JSON.`;
-    responseMimeType = "application/json";
-    responseSchema = {
-      type: Type.ARRAY,
-      items: {
+    if (mode === 'quiz') {
+      finalPrompt = `Genera un test de 3 preguntas sobre: ${prompt}. Responde solo en JSON.`;
+      responseMimeType = "application/json";
+      responseSchema = {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            question: { type: Type.STRING },
+            options: { type: Type.ARRAY, items: { type: Type.STRING } },
+            correctAnswer: { type: Type.NUMBER },
+            explanation: { type: Type.STRING }
+          },
+          required: ["question", "options", "correctAnswer", "explanation"]
+        }
+      };
+    } else if (mode === 'mindmap') {
+      finalPrompt = `Estructura un mapa conceptual jerárquico de: ${prompt}. Responde solo en JSON.`;
+      responseMimeType = "application/json";
+      responseSchema = {
         type: Type.OBJECT,
         properties: {
-          question: { type: Type.STRING },
-          options: { type: Type.ARRAY, items: { type: Type.STRING } },
-          correctAnswer: { type: Type.NUMBER },
-          explanation: { type: Type.STRING }
-        },
-        required: ["question", "options", "correctAnswer", "explanation"]
-      }
-    };
-  } else if (mode === 'mindmap') {
-    finalPrompt = `Estructura un mapa conceptual jerárquico de: ${prompt}. Responde solo en JSON.`;
-    responseMimeType = "application/json";
-    responseSchema = {
-      type: Type.OBJECT,
-      properties: {
-        core: { type: Type.STRING },
-        branches: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              node: { type: Type.STRING },
-              details: { type: Type.ARRAY, items: { type: Type.STRING } }
+          core: { type: Type.STRING },
+          branches: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                node: { type: Type.STRING },
+                details: { type: Type.ARRAY, items: { type: Type.STRING } }
+              }
             }
           }
         }
-      },
-      required: ["core", "branches"]
-    };
-  }
+      };
+    }
 
-  contents.push({ role: 'user', parts: [{ text: finalPrompt }] });
+    contents.push({ role: 'user', parts: [{ text: finalPrompt }] });
 
-  try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: contents as any,
@@ -115,30 +120,43 @@ export const getAIResponse = async (
 
     const text = response.text || "";
     if (mode === 'text') return { text };
-    return { text: "Contenido especializado generado.", data: JSON.parse(text) };
-  } catch (error) {
-    console.error(error);
-    return { text: "Lo siento, ha ocurrido un error al procesar tu solicitud académica." };
+    
+    try {
+      return { text: "Contenido especializado generado.", data: JSON.parse(text) };
+    } catch (e) {
+      return { text: text }; // Fallback si no es JSON
+    }
+
+  } catch (error: any) {
+    console.error("DETALLE DEL ERROR DE LA API:", error);
+    return { text: `Error de la IA: ${error.message || 'Error desconocido'}. Revisa la consola para más detalles.` };
   }
 };
 
 export const generatePodcastAudio = async (text: string): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  const prompt = `Convierte esto en un podcast educativo entre un profesor (Joe) y una alumna (Jane):\n\n${text}`;
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        multiSpeakerVoiceConfig: {
-          speakerVoiceConfigs: [
-            { speaker: 'Joe', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-            { speaker: 'Jane', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } }
-          ]
+  const apiKey = process.env.API_KEY || '';
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `Convierte esto en un podcast educativo breve (máximo 1 minuto) entre un profesor (Joe) y una alumna (Jane) sobre el tema:\n\n${text}`;
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          multiSpeakerVoiceConfig: {
+            speakerVoiceConfigs: [
+              { speaker: 'Joe', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+              { speaker: 'Jane', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } }
+            ]
+          }
         }
       }
-    }
-  });
-  return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
+    });
+    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
+  } catch (e) {
+    console.error("Error generando audio:", e);
+    return "";
+  }
 };
