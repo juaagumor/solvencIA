@@ -12,12 +12,12 @@ const getBaseSystemInstruction = (privateDocs: DocumentSource[]) => {
 Eres SolvencIA, la IA experta del Departamento de Contabilidad y Economía Financiera de la Universidad de Sevilla.
 
 REGLAS DE ORO:
-1. FUENTES INVISIBLES: No nombres nunca los archivos, temas o documentos. Responde como si el conocimiento fuera tuyo.
-2. RIGOR: Usa el Plan General Contable (PGC) y el contenido proporcionado.
-3. TONO: Académico, cercano y profesional.
+1. FUENTES INVISIBLES: No nombres nunca los archivos o temas.
+2. RIGOR: Usa el Plan General Contable (PGC).
+3. TONO: Académico y profesional.
 
-CONTEXTO ACADÉMICO:
-${docsContext || 'Actúa como catedrático experto en Contabilidad Española.'}
+CONTEXTO:
+${docsContext || 'Contabilidad española y PGC.'}
 `;
 };
 
@@ -27,94 +27,76 @@ export const getAIResponse = async (
   privateDocs: DocumentSource[] = [],
   mode: 'text' | 'quiz' | 'mindmap' | 'image_infographic' = 'text'
 ): Promise<{text: string, data?: any}> => {
-  const apiKey = process.env.API_KEY;
   
-  if (!apiKey || apiKey === '') {
-    console.error("ERROR: API_KEY no configurada. Verifica los Secrets de GitHub.");
-    return { text: "Error de configuración: La clave de API no está presente en el servidor." };
+  // Obtenemos la clave inyectada por Vite
+  const apiKey = process.env.API_KEY;
+
+  // LOG DE DIAGNÓSTICO (Visible en F12)
+  if (!apiKey || apiKey === "undefined" || apiKey === "") {
+    console.error("🚨 ERROR CRÍTICO: La API_KEY no ha sido detectada por la aplicación.");
+    return { text: "Error de configuración: La clave de API no se ha inyectado en el despliegue. Revisa los Secrets de GitHub." };
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
   try {
-    // MODO IMAGEN: Infografía Visual
+    // MODO IMAGEN
     if (mode === 'image_infographic') {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [{ text: `Crea una infografía educativa técnica y minimalista sobre el siguiente concepto contable: ${prompt}. Usa colores sobrios (azul, granate, blanco) y un diseño de alta calidad para universidad.` }]
-        },
-        config: {
-          imageConfig: { aspectRatio: "1:1" }
-        }
+        contents: { parts: [{ text: `Infografía técnica: ${prompt}` }] }
       });
-
       const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-      if (part?.inlineData) {
-        return { 
-          text: "He diseñado esta infografía visual para que visualices mejor los conceptos clave.", 
-          data: `data:image/png;base64,${part.inlineData.data}` 
-        };
-      }
+      return part?.inlineData 
+        ? { text: "Infografía generada.", data: `data:image/png;base64,${part.inlineData.data}` }
+        : { text: "No se pudo generar la imagen." };
     }
 
-    // MODOS DE TEXTO Y JSON
-    const contents = history.map(msg => ({
+    const contents = history.slice(-5).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
 
-    let finalPrompt = prompt;
     let responseMimeType = "text/plain";
     let responseSchema: any = undefined;
 
-    if (mode === 'quiz') {
-      finalPrompt = `Genera un test de 3 preguntas sobre: ${prompt}. Responde solo en JSON.`;
+    if (mode === 'quiz' || mode === 'mindmap') {
       responseMimeType = "application/json";
-      responseSchema = {
-        type: Type.ARRAY,
-        items: {
+      if (mode === 'quiz') {
+        responseSchema = {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              options: { type: Type.ARRAY, items: { type: Type.STRING } },
+              correctAnswer: { type: Type.NUMBER },
+              explanation: { type: Type.STRING }
+            },
+            required: ["question", "options", "correctAnswer", "explanation"]
+          }
+        };
+      } else {
+        responseSchema = {
           type: Type.OBJECT,
           properties: {
-            question: { type: Type.STRING },
-            options: { type: Type.ARRAY, items: { type: Type.STRING } },
-            correctAnswer: { type: Type.NUMBER },
-            explanation: { type: Type.STRING }
-          },
-          required: ["question", "options", "correctAnswer", "explanation"]
-        }
-      };
-    } else if (mode === 'mindmap') {
-      finalPrompt = `Estructura un mapa conceptual jerárquico de: ${prompt}. Responde solo en JSON.`;
-      responseMimeType = "application/json";
-      responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-          core: { type: Type.STRING },
-          branches: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                node: { type: Type.STRING },
-                details: { type: Type.ARRAY, items: { type: Type.STRING } }
-              }
-            }
+            core: { type: Type.STRING },
+            branches: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { node: { type: Type.STRING }, details: { type: Type.ARRAY, items: { type: Type.STRING } } } } }
           }
-        }
-      };
+        };
+      }
     }
 
-    contents.push({ role: 'user', parts: [{ text: finalPrompt }] });
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash-lite-latest', // Modelo más compatible y rápido
       contents: contents as any,
       config: {
         systemInstruction: getBaseSystemInstruction(privateDocs),
-        temperature: mode === 'text' ? 0.7 : 0.1,
         responseMimeType: responseMimeType as any,
-        responseSchema: responseSchema
+        responseSchema: responseSchema,
+        temperature: 0.7
       }
     });
 
@@ -122,33 +104,37 @@ export const getAIResponse = async (
     if (mode === 'text') return { text };
     
     try {
-      return { text: "Contenido especializado generado.", data: JSON.parse(text) };
+      return { text: "Análisis completado.", data: JSON.parse(text) };
     } catch (e) {
-      return { text: text }; // Fallback si no es JSON
+      return { text };
     }
 
   } catch (error: any) {
-    console.error("DETALLE DEL ERROR DE LA API:", error);
-    return { text: `Error de la IA: ${error.message || 'Error desconocido'}. Revisa la consola para más detalles.` };
+    console.error("ERROR DETALLADO DE API:", error);
+    // Si el error es 400, la clave es físicamente inválida
+    if (error.message?.includes("400")) {
+      return { text: "La clave de API proporcionada no es válida. Por favor, genera una nueva en AI Studio y actualiza el Secret de GitHub." };
+    }
+    return { text: `Error: ${error.message || 'Error de conexión'}` };
   }
 };
 
 export const generatePodcastAudio = async (text: string): Promise<string> => {
   const apiKey = process.env.API_KEY || '';
+  if (!apiKey) return "";
   const ai = new GoogleGenAI({ apiKey });
-  const prompt = `Convierte esto en un podcast educativo breve (máximo 1 minuto) entre un profesor (Joe) y una alumna (Jane) sobre el tema:\n\n${text}`;
   
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts: [{ text: `Haz un diálogo breve profesor-alumna sobre: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           multiSpeakerVoiceConfig: {
             speakerVoiceConfigs: [
-              { speaker: 'Joe', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-              { speaker: 'Jane', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } }
+              { speaker: 'Profesor', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+              { speaker: 'Alumna', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } }
             ]
           }
         }
@@ -156,7 +142,6 @@ export const generatePodcastAudio = async (text: string): Promise<string> => {
     });
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
   } catch (e) {
-    console.error("Error generando audio:", e);
     return "";
   }
 };
