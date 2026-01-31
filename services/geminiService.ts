@@ -30,9 +30,10 @@ export const getAIResponse = async (
   mode: 'text' | 'quiz' | 'mindmap' = 'text'
 ): Promise<{text: string, data?: any}> => {
   
-  // Se obtiene la API KEY directamente del entorno inyectado por Vite
   const apiKey = process.env.API_KEY;
-  if (!apiKey) return { text: "Error: API_KEY no configurada." };
+  if (!apiKey) {
+    throw new Error("API_KEY no configurada. Por favor, añádela a los secretos de GitHub.");
+  }
 
   const ai = new GoogleGenAI({ apiKey });
 
@@ -42,9 +43,11 @@ export const getAIResponse = async (
       parts: [{ text: msg.text }]
     }));
 
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
+
     let config: any = {
       systemInstruction: getBaseSystemInstruction(privateDocs),
-      temperature: 0.2
+      temperature: 0.2,
     };
 
     if (mode === 'quiz' || mode === 'mindmap') {
@@ -75,10 +78,8 @@ export const getAIResponse = async (
       }
     }
 
-    contents.push({ role: 'user', parts: [{ text: prompt }] });
-
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: contents as any,
       config: config
     });
@@ -87,20 +88,22 @@ export const getAIResponse = async (
     if (mode === 'text') return { text };
     
     try {
-      return { text: "Contenido generado.", data: JSON.parse(text) };
+      const parsedData = JSON.parse(text);
+      return { text: "Contenido generado.", data: parsedData };
     } catch (e) {
       return { text };
     }
 
   } catch (error: any) {
-    console.error("Gemini Error:", error);
-    return { text: "Lo siento, ha ocurrido un error al procesar tu consulta financiera." };
+    console.error("Gemini API Error:", error);
+    throw error;
   }
 };
 
 export const generatePodcastAudio = async (text: string): Promise<string> => {
-  const apiKey = process.env.API_KEY || '';
+  const apiKey = process.env.API_KEY;
   if (!apiKey) return "";
+  
   const ai = new GoogleGenAI({ apiKey });
   
   try {
