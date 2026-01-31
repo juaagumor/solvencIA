@@ -146,7 +146,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Solo hacemos scroll si hay más de un mensaje, para que el de bienvenida no se baje
   useEffect(() => { 
     if (messages.length > 1) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
@@ -326,7 +325,7 @@ const App: React.FC = () => {
 
         {view === AppView.CHATS && (
           <div className="flex-1 flex flex-col overflow-hidden pt-32">
-            <div className="flex-1 overflow-y-auto px-6 md:px-20 space-y-10 custom-scrollbar pb-40">
+            <div className="flex-1 overflow-y-auto px-6 md:px-20 space-y-10 custom-scrollbar pb-32">
               <div className="max-w-4xl mx-auto space-y-10">
                 {messages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in`}>
@@ -355,29 +354,42 @@ const App: React.FC = () => {
               <div ref={chatEndRef} />
             </div>
             
-            <div className="px-8 pb-10 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-20 relative z-50">
-              <div className="max-w-3xl mx-auto">
-                <div className="flex flex-wrap gap-3 mb-8 justify-center">
+            <div className="px-8 pb-8 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-12 relative z-50">
+              <div className="max-w-4xl mx-auto flex items-end gap-4">
+                {/* Columna de Herramientas a la Izquierda */}
+                <div className="flex flex-col gap-2 mb-2">
                   {[
-                    { id: 'quiz', name: 'Test del Tema', prompt: 'TEST', icon: QuizIcon },
+                    { id: 'quiz', name: 'Test', prompt: 'TEST', icon: QuizIcon },
                     { id: 'podcast', name: 'Podcast', prompt: 'PODCAST', icon: AudioIcon },
                   ].map(tool => (
-                    <button key={tool.id} onClick={() => handleSend(tool.prompt, tool.id as any)} className="flex items-center gap-2 px-6 py-3 bg-[#111] border border-white/5 rounded-2xl hover:border-[#a51d36] transition-all text-[10px] font-black uppercase text-gray-400 hover:text-white">
-                      <tool.icon size={14} /> {tool.name}
+                    <button 
+                      key={tool.id} 
+                      onClick={() => handleSend(tool.prompt, tool.id as any)} 
+                      title={tool.name}
+                      className="flex items-center justify-center gap-2 w-12 h-12 md:w-auto md:px-4 bg-[#111] border border-white/5 rounded-2xl hover:border-[#a51d36] transition-all text-[10px] font-black uppercase text-gray-500 hover:text-white shadow-xl group"
+                    >
+                      <tool.icon size={18} className="md:size-4" />
+                      <span className="hidden md:block">{tool.name}</span>
                     </button>
                   ))}
                 </div>
-                <div className="relative group shadow-2xl">
+
+                {/* Área de Texto Principal */}
+                <div className="flex-1 relative group shadow-2xl">
                   <textarea 
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
                     placeholder="Pregúntame tus dudas de la asignatura"
-                    className="w-full bg-[#111] border border-white/10 rounded-[3rem] min-h-[140px] pt-10 pb-20 px-12 focus:outline-none focus:ring-4 focus:ring-[#a51d36]/20 text-lg transition-all placeholder:text-gray-800 resize-none"
+                    className="w-full bg-[#111] border border-white/10 rounded-[2.5rem] min-h-[90px] max-h-[160px] pt-6 pb-6 pl-8 pr-20 focus:outline-none focus:ring-4 focus:ring-[#a51d36]/20 text-lg transition-all placeholder:text-gray-800 resize-none custom-scrollbar"
                   />
-                  <div className="absolute right-8 bottom-8">
-                    <button onClick={() => handleSend()} disabled={isLoading} className="p-6 bg-[#a51d36] text-white rounded-[2rem] hover:scale-110 shadow-2xl disabled:opacity-30 transition-all active:scale-95">
-                      <SendIcon size={28}/>
+                  <div className="absolute right-4 bottom-4">
+                    <button 
+                      onClick={() => handleSend()} 
+                      disabled={isLoading} 
+                      className="p-4 bg-[#a51d36] text-white rounded-[1.5rem] hover:scale-110 shadow-2xl disabled:opacity-30 transition-all active:scale-95"
+                    >
+                      <SendIcon size={24}/>
                     </button>
                   </div>
                 </div>
