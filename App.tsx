@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { Message, AppView, DocumentSource, QuizQuestion, ConceptMap } from './types';
 import { getAIResponse, generatePodcastAudio } from './services/geminiService';
@@ -117,12 +117,12 @@ const App: React.FC = () => {
 
   // --- CONFIGURACIÓN DE FIREBASE (RELLENAR PARA QUE FUNCIONE EN GITHUB) ---
   const firebaseConfig = {
-    apiKey: "AIzaSyCHEAxiJ6Onsi1ONx-ul8FKfliETUuC8UY",
-    authDomain: "solvencia-254a4.firebaseapp.com",
-    projectId: "solvencia-254a4",
-    storageBucket: "solvencia-254a4.firebasestorage.app",
-    messagingSenderId: "287316473049",
-    appId: "1:287316473049:web:5e456fd9fd113e628c3ac8"
+    apiKey: "TU_API_KEY",
+    authDomain: "TU_DOMINIO.firebaseapp.com",
+    projectId: "TU_PROJECT_ID",
+    storageBucket: "TU_BUCKET.appspot.com",
+    messagingSenderId: "TU_SENDER_ID",
+    appId: "TU_APP_ID"
   };
 
   const appName = "SolvencIA";
@@ -148,7 +148,7 @@ const App: React.FC = () => {
   const clickCount = useRef(0);
 
   useEffect(() => {
-    if (firebaseConfig.projectId !== "TU_PROJECT_ID") {
+    if (firebaseConfig.projectId && firebaseConfig.projectId !== "TU_PROJECT_ID") {
       initFirebase();
     }
   }, []);
@@ -156,7 +156,7 @@ const App: React.FC = () => {
   const initFirebase = async () => {
     try {
       setDbStatus('idle');
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
       const db = getFirestore(app);
       const querySnapshot = await getDocs(collection(db, "knowledge"));
       const docs: DocumentSource[] = [];
@@ -164,7 +164,7 @@ const App: React.FC = () => {
       setCloudDocs(docs);
       setDbStatus('connected');
     } catch (err) {
-      console.error("Firebase Error:", err);
+      console.error("Firebase Initialization Error:", err);
       setDbStatus('error');
     }
   };
@@ -173,7 +173,7 @@ const App: React.FC = () => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente. He analizado el material de la asignatura para ayudarte.\n\n⚠️ Recuerda: Mis respuestas se basan en el material oficial. ¿En qué puedo ayudarte?`,
+        text: `¡Hola! 👋 Soy tu asistente de estudio inteligente, impulsado por Gemini 3 Flash. He analizado a fondo todo el material de la asignatura Análisis de Estados Financieros I para ayudarte a despejar dudas, resumir conceptos y generar contenido de repaso en segundos.\n\n⚠️ Un pequeño recordatorio: Aunque soy muy avanzado, a veces puedo cometer errores. Si tienes una duda crítica, no olvides contrastarla con tu profesor o el material oficial. ¡Vamos a por ese aprobado!`,
         timestamp: Date.now()
       }]);
     }
@@ -185,7 +185,7 @@ const App: React.FC = () => {
     if (firebaseConfig.projectId === "TU_PROJECT_ID") return alert("Configura Firebase en App.tsx");
     setIsSyncing(true);
     try {
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
       const db = getFirestore(app);
       const batch = writeBatch(db);
       const allDocs = [...PRIVATE_KNOWLEDGE_BASE, ...trainingDocs];
@@ -247,8 +247,8 @@ const App: React.FC = () => {
         const res = await getAIResponse(textToUse, messages, currentKnowledge, mode);
         setMessages(prev => [...prev, { role: 'model', text: res.text, type: mode, data: res.data, timestamp: Date.now() }]);
       }
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'model', text: "Error de conexión con la IA.", timestamp: Date.now() }]);
+    } catch (err: any) {
+      setMessages(prev => [...prev, { role: 'model', text: `Error de conexión con la IA: ${err.message || 'Verifica tu API_KEY y conexión.'}`, timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
   };
 
@@ -300,7 +300,7 @@ const App: React.FC = () => {
             </div>
           </div>
           {isAdmin && (
-            <button onClick={() => setView(view === AppView.ADMIN ? AppView.CHATS : AppView.ADMIN)} className="pointer-events-auto p-3 bg-white/5 rounded-2xl border border-white/10 text-gray-400 hover:text-white transition-all">
+            <button onClick={() => setView(view === AppView.ADMIN ? AppView.CHATS : AppView.ADMIN)} className="pointer-events-auto p-3 bg-white/5 rounded-2xl border border-white/10 text-gray-400 hover:text-white transition-all shadow-xl">
               {view === AppView.ADMIN ? <XIcon size={20} /> : <SettingsIcon size={20} />}
             </button>
           )}
@@ -336,9 +336,13 @@ const App: React.FC = () => {
             <div className="px-8 pb-8 bg-gradient-to-t from-[#050505] to-transparent pt-12">
               <div className="max-w-3xl mx-auto">
                 <div className="flex flex-wrap gap-2 mb-6 justify-center">
-                  {['Test Rápido', 'Esquema', 'Audio'].map((name, i) => (
-                    <button key={i} onClick={() => handleSend(`${name} de: ${inputValue || "estados financieros"}`, ['quiz', 'mindmap', 'podcast'][i] as any)} className="px-5 py-3 bg-[#111] border border-white/5 rounded-2xl text-[10px] font-black uppercase text-gray-500 hover:border-[#a51d36]/40 transition-all">
-                      {name}
+                  {[
+                    { id: 'quiz', name: 'Test Rápido', prompt: 'Genera un test sobre: ', icon: QuizIcon },
+                    { id: 'mindmap', name: 'Esquema', prompt: 'Haz un mapa conceptual de: ', icon: MindmapIcon },
+                    { id: 'podcast', name: 'Audio', prompt: 'Explícame en audio: ', icon: AudioIcon },
+                  ].map(tool => (
+                    <button key={tool.id} onClick={() => handleSend(tool.prompt + (inputValue || "los estados financieros"), tool.id as any)} className="flex items-center gap-2 px-5 py-3 bg-[#111] border border-white/5 rounded-2xl hover:border-[#a51d36]/40 transition-all text-[10px] font-black uppercase tracking-widest text-gray-500">
+                      <tool.icon size={14} /> <span>{tool.name}</span>
                     </button>
                   ))}
                 </div>
@@ -347,11 +351,11 @@ const App: React.FC = () => {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                    placeholder="Escribe tu duda académica..."
+                    placeholder="Pregúntame tus dudas"
                     className="w-full bg-[#111] border border-white/5 rounded-[2.5rem] min-h-[140px] pt-8 pb-16 pl-10 pr-24 focus:outline-none focus:ring-2 focus:ring-[#a51d36]/20 text-lg transition-all shadow-2xl placeholder:text-gray-800 resize-none"
                   />
                   <div className="absolute right-6 bottom-6">
-                    <button onClick={() => handleSend()} disabled={isLoading} className="p-5 bg-[#a51d36] text-white rounded-3xl hover:scale-105 active:scale-95 disabled:opacity-30 transition-all">
+                    <button onClick={() => handleSend()} disabled={isLoading} className="p-5 bg-[#a51d36] text-white rounded-3xl hover:scale-105 active:scale-95 shadow-2xl disabled:opacity-30 transition-all">
                       <SendIcon size={28}/>
                     </button>
                   </div>
@@ -364,16 +368,16 @@ const App: React.FC = () => {
         {view === AppView.ADMIN && (
           <div className="flex-1 overflow-y-auto p-12 bg-[#080808] pt-24 custom-scrollbar pb-40">
             <div className="max-w-4xl mx-auto">
-               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 text-[10px] font-black uppercase">
-                  <BackIcon size={16} /> Volver
+               <button onClick={() => setView(AppView.CHATS)} className="flex items-center gap-2 text-gray-600 hover:text-white mb-10 text-[10px] font-black uppercase tracking-widest">
+                  <BackIcon size={16} /> Volver al Chat
                </button>
                <h2 className="text-6xl font-black text-white tracking-tighter mb-16 italic">Gestor Maestro</h2>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl">
                     <h3 className="text-[10px] font-black text-gray-400 uppercase mb-6 italic">1. Carga de Material</h3>
-                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all`}>
+                    <div onClick={() => fileInputRef.current?.click()} className={`border-2 border-dashed ${isProcessing ? 'border-[#f9c80e]' : 'border-white/5'} rounded-2xl p-10 flex flex-col items-center gap-4 cursor-pointer hover:bg-white/5 transition-all mb-6`}>
                        {isProcessing ? <LoaderIcon size={32} className="text-[#f9c80e] animate-spin"/> : <UploadIcon size={32} className="text-gray-700"/>}
-                       <span className="text-[10px] font-black uppercase text-gray-500">Subir PDF</span>
+                       <span className="text-[10px] font-black uppercase text-gray-500">Subir PDF / Word</span>
                     </div>
                   </div>
                   <div className="bg-[#111] p-10 rounded-[3rem] border border-white/5 shadow-2xl flex flex-col justify-between">
