@@ -1,4 +1,5 @@
 
+// Use GoogleGenAI from @google/genai
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Message, DocumentSource } from "../types";
 
@@ -61,11 +62,13 @@ export const getAIResponse = async (
     return { text: "Error: API_KEY no configurada en el entorno." };
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  // Use the mandatory initialization format
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Modelo principal 2025: Gemini 3 Flash
+  // Model principal 2025: Gemini 3 Flash
   const primaryModel = 'gemini-3-flash-preview';
-  const fallbackModel = 'gemini-2.5-flash-lite-latest';
+  // Use correct alias for flash lite as per guidelines
+  const fallbackModel = 'gemini-flash-lite-latest';
 
   try {
     let contents = history
@@ -107,6 +110,7 @@ export const getAIResponse = async (
       config: config
     });
 
+    // Extract text from property, not method
     const text = response.text;
     if (!text) throw new Error("Respuesta vacía");
 
@@ -132,7 +136,7 @@ export const generatePodcastAudio = async (script: string): Promise<string> => {
   const apiKey = process.env.API_KEY;
   if (!apiKey || !script) return "";
   
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -146,6 +150,7 @@ export const generatePodcastAudio = async (script: string): Promise<string> => {
         }
       }
     });
+    // Extract audio data from parts
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || "";
   } catch (e) {
     console.error("Error en generación de audio:", e);
