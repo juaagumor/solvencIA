@@ -1,7 +1,14 @@
+
+export interface DocumentSection {
+  title: string;
+  body: string;
+}
+
 export interface DocumentSource {
   id: string;
   name: string;
   content: string;
+  sections?: DocumentSection[];
   updatedAt: number;
 }
 

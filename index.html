@@ -9,6 +9,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
+    <!-- KaTeX para fórmulas matemáticas - Carga inmediata -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
     <!-- Procesamiento de PDF y Word -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -42,6 +47,23 @@
       .animate-in {
         animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
+
+      /* Animación del Resplandor IA */
+      @keyframes glowPulse {
+        0%, 100% { 
+          text-shadow: 0 0 5px rgba(220, 38, 38, 0.3);
+        }
+        50% { 
+          text-shadow: 0 0 15px rgba(220, 38, 38, 0.9), 0 0 25px rgba(220, 38, 38, 0.5);
+        }
+      }
+      .glow-animation {
+        animation: glowPulse 2s infinite ease-in-out;
+        display: inline-block;
+      }
+      
+      .katex { font-size: 1.1em; color: inherit; }
+      .katex-display { margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
     </style>
   <script type="importmap">
 {
@@ -57,11 +79,9 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body>
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>

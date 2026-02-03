@@ -8,7 +8,7 @@ import {
   addDoc,
   serverTimestamp 
 } from 'firebase/firestore';
-import { Message, AppView, DocumentSource, QuizQuestion } from './types';
+import { Message, AppView, DocumentSource, QuizQuestion, DocumentSection } from './types';
 import { getAIResponse, generatePodcastAudio } from './services/geminiService';
 import { PRIVATE_KNOWLEDGE_BASE } from './knowledge';
 
@@ -20,18 +20,52 @@ import {
   Award as QuizIcon, 
   Play as PlayIcon, 
   Volume2 as SpeakerIcon, 
-  Settings as SettingsIcon, 
   ArrowLeft as BackIcon, 
   FileUp as UploadIcon, 
   Loader2 as LoaderIcon,
   BookOpen as BookIcon,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Layers as LayersIcon,
+  Plus as PlusIcon,
+  Save as SaveIcon,
+  Trash2 as TrashIcon
 } from 'lucide-react';
 
 const pdfjsLib = (window as any)['pdfjs-dist/build/pdf'];
 if (pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
+
+/**
+ * Componente para renderizar texto con soporte matemático KaTeX
+ */
+const MathText: React.FC<{ text: string }> = ({ text }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Usamos requestAnimationFrame para asegurar que el DOM esté listo
+    requestAnimationFrame(() => {
+      if (containerRef.current && (window as any).renderMathInElement) {
+        (window as any).renderMathInElement(containerRef.current, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '\\[', right: '\\]', display: true }
+          ],
+          throwOnError: false,
+          output: 'html'
+        });
+      }
+    });
+  }, [text]);
+
+  return (
+    <div ref={containerRef} className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">
+      {text}
+    </div>
+  );
+};
 
 const QuizViewer: React.FC<{ questions: QuizQuestion[] }> = ({ questions }) => {
   const [currentAnswers, setCurrentAnswers] = useState<Record<number, number>>({});
@@ -97,6 +131,10 @@ const App: React.FC = () => {
   const [searchLibrary, setSearchLibrary] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
+  const [showEditor, setShowEditor] = useState(false);
+  const [newDocName, setNewDocName] = useState('');
+  const [newDocSections, setNewDocSections] = useState<DocumentSection[]>([{ title: '', body: '' }]);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,7 +148,13 @@ const App: React.FC = () => {
       const docs: DocumentSource[] = [];
       snap.forEach(d => {
         const data = d.data();
-        docs.push({ id: d.id, ...data } as DocumentSource);
+        docs.push({ 
+          id: d.id, 
+          name: data.name || "Sin título", 
+          content: data.content || "", 
+          sections: data.sections || [],
+          updatedAt: data.updatedAt || Date.now() 
+        } as DocumentSource);
       });
       setCloudDocs(docs);
     } catch (e) {
@@ -126,7 +170,7 @@ const App: React.FC = () => {
     if (messages.length === 0) {
       setMessages([{
         role: 'model',
-        text: `¡Hola! 👋 Soy SolvencIA, tu experto en Análisis de Estados Financieros.\n\nHe integrado todo el temario para resolver tus dudas rápidamente. Recuerda que, como sistema de IA, puedo cometer errores; verifica siempre los datos críticos con tus apuntes oficiales.\n\n¿Qué concepto quieres repasar hoy?`,
+        text: `¡Hola! 👋 Soy solvencIA, tu experto en Análisis de Estados Financieros.\n\nHe integrado todo el temario para resolver tus dudas rápidamente. Recuerda que, como sistema de IA, puedo cometer errores; verifica siempre los datos críticos con tus apuntes oficiales.\n\n¿Qué concepto quieres repasar hoy?`,
         timestamp: Date.now()
       }]);
     }
@@ -168,7 +212,7 @@ const App: React.FC = () => {
 
         if (content.trim()) {
           await addDoc(collection(db, "knowledge"), {
-            name: file.name,
+            name: file.name || "Archivo subido",
             content: content,
             updatedAt: Date.now(),
             createdAt: serverTimestamp()
@@ -181,6 +225,32 @@ const App: React.FC = () => {
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSaveStructuredDoc = async () => {
+    if (!newDocName.trim()) return alert("El documento necesita un nombre");
+    if (newDocSections.some(s => !s.title.trim() || !s.body.trim())) return alert("Todas las secciones deben tener título y cuerpo");
+
+    setIsUploading(true);
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    const db = getFirestore(app);
+
+    try {
+      await addDoc(collection(db, "knowledge"), {
+        name: newDocName,
+        sections: newDocSections,
+        updatedAt: Date.now(),
+        createdAt: serverTimestamp()
+      });
+      setNewDocName('');
+      setNewDocSections([{ title: '', body: '' }]);
+      setShowEditor(false);
+      await fetchCloudDocs();
+    } catch (err) {
+      console.error("Error guardando documento estructurado:", err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -209,8 +279,18 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Fallo de IA:", err);
-      setMessages(prev => [...prev, { role: 'model', text: `Servicio temporalmente limitado. Esto suele deberse a la cuota de la API o falta de clave de acceso. El sistema intentará recuperarse automáticamente.`, timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { role: 'model', text: `Servicio temporalmente limitado. El sistema intentará recuperarse automáticamente.`, timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
+  };
+
+  const decodeBase64 = (base64: string) => {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
   };
 
   const playAudio = async (base64: string) => {
@@ -218,7 +298,7 @@ const App: React.FC = () => {
     try {
       setIsPlayingAudio(true);
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+      const bytes = decodeBase64(base64);
       const dataInt16 = new Int16Array(bytes.buffer);
       const buffer = audioContextRef.current.createBuffer(1, dataInt16.length, 24000);
       const channelData = buffer.getChannelData(0);
@@ -228,36 +308,36 @@ const App: React.FC = () => {
       source.connect(audioContextRef.current.destination);
       source.onended = () => setIsPlayingAudio(false);
       source.start(0);
-    } catch (e) { setIsPlayingAudio(false); }
+    } catch (e) { 
+      console.error("Audio playback error:", e);
+      setIsPlayingAudio(false); 
+    }
   };
 
-  const filteredLibrary = cloudDocs.filter(doc => 
-    doc.name.toLowerCase().includes(searchLibrary.toLowerCase())
-  );
+  const filteredLibrary = cloudDocs.filter(doc => {
+    const docName = doc.name || "";
+    const query = searchLibrary || "";
+    return docName.toLowerCase().includes(query.toLowerCase());
+  });
 
   return (
     <div className="flex h-screen bg-[#050505] text-gray-200 overflow-hidden font-sans">
       <main className="flex-1 flex flex-col bg-[#080808] relative">
         <header className="absolute top-0 left-0 p-10 flex items-center justify-between w-full z-40 bg-gradient-to-b from-[#080808] to-transparent pointer-events-none">
-          <div className="pointer-events-auto cursor-pointer select-none" onClick={() => { if (++clickCount.current === 5) { setShowPassModal(true); clickCount.current = 0; } }}>
-            {/* LOGO BLINDADO: font-normal + glitch */}
-            <h1 className="font-normal text-[42px] text-white tracking-[-0.05em] leading-none select-none relative" 
-                style={{ 
-                  textShadow: '2px 0 #ff0000, -2px 0 #00ffff',
-                  filter: 'contrast(1.2) brightness(1.1)' 
-                }}>
-              SolvencIA
-            </h1>
-            <div className="flex items-center gap-2 mt-1.5">
-              <p className="text-[10px] text-[#a51d36] font-black uppercase tracking-tighter">ANÁLISIS DE ESTADOS FINANCIEROS I</p>
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_12px_rgba(34,197,94,1)]" />
+          <div className="pointer-events-auto cursor-pointer select-none group" onClick={() => { if (++clickCount.current === 5) { setShowPassModal(true); clickCount.current = 0; } }}>
+            <div className="flex flex-col items-start w-fit">
+              <h1 className="font-bold text-[28px] text-white tracking-tight leading-none select-none flex items-center font-inter lowercase">
+                solvenc<span className="text-red-600 ml-0.5 glow-animation uppercase">ia</span>
+              </h1>
+              <div className="w-full flex justify-between items-center mt-1 pt-0.5 border-t border-white/5">
+                <p className="text-[7.2px] text-[#a51d36] font-black uppercase tracking-tight leading-none whitespace-nowrap">
+                  ANÁLISIS DE ESTADOS FINANCIEROS I
+                </p>
+                <div className="w-1 h-1 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,1)] ml-1 shrink-0" />
+              </div>
             </div>
           </div>
-          {isAdmin && (
-            <button onClick={() => setView(view === AppView.ADMIN ? AppView.CHATS : AppView.ADMIN)} className="pointer-events-auto p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-[#a51d36] hover:border-[#a51d36] transition-all backdrop-blur-md">
-              {view === AppView.ADMIN ? <XIcon size={18} /> : <SettingsIcon size={18} />}
-            </button>
-          )}
+          {/* Botón de Ajustes Eliminado por petición del usuario */}
         </header>
 
         {view === AppView.CHATS && (
@@ -272,6 +352,7 @@ const App: React.FC = () => {
                       {msg.type === 'quiz' ? <QuizViewer questions={msg.data} /> :
                        msg.type === 'podcast' ? (
                         <div className="flex items-center gap-8 p-6 bg-black/40 rounded-3xl border border-white/5">
+                          {/* Use SpeakerIcon instead of Volume2Icon as per import definition */}
                           <button onClick={() => playAudio(msg.data)} className={`p-8 rounded-2xl ${isPlayingAudio ? 'bg-gray-800' : 'bg-[#f9c80e]'} text-black shadow-2xl transition-all hover:scale-105 active:scale-95`}>
                             {isPlayingAudio ? <SpeakerIcon size={32} className="animate-pulse" /> : <PlayIcon size={32} />}
                           </button>
@@ -280,7 +361,7 @@ const App: React.FC = () => {
                             <p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em] mt-2">Joe & Jane Duo</p>
                           </div>
                         </div>
-                       ) : <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>}
+                       ) : <MathText text={msg.text} />}
                     </div>
                   </div>
                 ))}
@@ -293,7 +374,6 @@ const App: React.FC = () => {
             
             <div className="px-8 pb-10 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent pt-8 z-50">
               <div className="max-w-4xl mx-auto flex items-end gap-3">
-                {/* BOTONES LATERALES: h-[52px] */}
                 <div className="flex flex-col gap-1 h-[108px] justify-between mb-0 shrink-0">
                   <button onClick={() => handleSend('TEST', 'quiz')} className="flex items-center justify-center gap-2 px-4 h-[52px] bg-[#111] border border-white/5 rounded-xl hover:border-[#a51d36] hover:bg-[#a51d36]/10 text-gray-600 hover:text-white transition-all shadow-xl group">
                     <QuizIcon size={14} className="group-hover:text-[#f9c80e]" />
@@ -305,7 +385,6 @@ const App: React.FC = () => {
                   </button>
                 </div>
 
-                {/* TEXTAREA: min-h-[108px] */}
                 <div className="flex-1 relative group">
                   <textarea 
                     value={inputValue} 
@@ -337,77 +416,156 @@ const App: React.FC = () => {
                </div>
 
                <header>
-                 <h2 className="text-8xl font-black text-white tracking-tighter italic opacity-20 leading-none">BIBLIOTECA</h2>
-                 <p className="text-gray-600 mt-4 max-w-2xl font-medium">Gestión de recursos externos. Solo se muestran los documentos importados en la nube.</p>
+                 <h2 className="text-8xl font-black text-white tracking-tighter italic opacity-20 leading-none uppercase">Biblioteca</h2>
+                 <p className="text-gray-600 mt-4 max-w-2xl font-medium">Gestiona documentos divididos en secciones para un análisis IA de alta precisión.</p>
                </header>
 
-               <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                 <div className="lg:col-span-1 space-y-6">
-                   <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#a51d36] mb-8">Acciones Rápidas</h3>
-                   <div onClick={() => !isUploading && fileInputRef.current?.click()} className={`group border-2 border-dashed border-white/5 rounded-[2.5rem] p-12 flex flex-col items-center justify-center gap-6 transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-white/[0.02] hover:border-[#a51d36]/30'}`}>
-                      <div className="p-6 bg-white/5 rounded-full group-hover:scale-110 transition-transform">
-                        {isUploading ? <LoaderIcon size={32} className="text-[#a51d36] animate-spin" /> : <UploadIcon size={32} className="text-gray-700 group-hover:text-[#a51d36]"/>}
+               {showEditor ? (
+                 <div className="bg-[#111] border border-white/5 rounded-[3rem] p-10 space-y-10 animate-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 max-w-xl">
+                        <label className="text-[10px] font-black text-[#a51d36] uppercase tracking-widest mb-2 block">Nombre del Documento Cloud</label>
+                        <input 
+                          type="text" 
+                          value={newDocName}
+                          onChange={e => setNewDocName(e.target.value)}
+                          placeholder="Ej: Análisis de Ratios 2025..."
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-xl font-bold focus:outline-none focus:border-[#a51d36]"
+                        />
                       </div>
-                      <span className="text-[10px] font-black uppercase text-gray-600 tracking-[0.4em] text-center">{isUploading ? 'PROCESANDO...' : 'IMPORTAR PDF/TXT'}</span>
+                      <button onClick={() => setShowEditor(false)} className="p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors">
+                        <XIcon size={24} />
+                      </button>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Estructura por Secciones</h3>
+                        <button 
+                          onClick={() => setNewDocSections([...newDocSections, { title: '', body: '' }])}
+                          className="flex items-center gap-2 px-6 py-3 bg-[#a51d36]/20 text-[#a51d36] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#a51d36] hover:text-white transition-all"
+                        >
+                          <PlusIcon size={14} /> Añadir Sección
+                        </button>
+                      </div>
+
+                      <div className="space-y-8 max-h-[500px] overflow-y-auto pr-4 custom-scrollbar">
+                        {newDocSections.map((sec, idx) => (
+                          <div key={idx} className="bg-white/5 border border-white/5 rounded-3xl p-8 relative group">
+                            <button 
+                              onClick={() => setNewDocSections(newDocSections.filter((_, i) => i !== idx))}
+                              className="absolute top-4 right-4 p-2 text-gray-700 hover:text-red-500 transition-colors"
+                            >
+                              <TrashIcon size={18} />
+                            </button>
+                            <div className="grid gap-6">
+                              <div>
+                                <input 
+                                  type="text" 
+                                  placeholder="Título de la sección (ej: Introducción)"
+                                  className="w-full bg-transparent border-b border-white/10 p-2 text-lg font-black text-[#f9c80e] focus:outline-none focus:border-[#f9c80e] placeholder:text-gray-800"
+                                  value={sec.title}
+                                  onChange={e => {
+                                    const next = [...newDocSections];
+                                    next[idx].title = e.target.value;
+                                    setNewDocSections(next);
+                                  }}
+                                />
+                              </div>
+                              <textarea 
+                                placeholder="Contenido académico de esta sección..."
+                                className="w-full bg-transparent p-2 text-sm leading-relaxed text-gray-400 focus:outline-none resize-none min-h-[150px] placeholder:text-gray-800"
+                                value={sec.body}
+                                onChange={e => {
+                                  const next = [...newDocSections];
+                                  next[idx].body = e.target.value;
+                                  setNewDocSections(next);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={handleSaveStructuredDoc}
+                      disabled={isUploading}
+                      className="w-full py-6 bg-[#a51d36] text-white font-black text-xs uppercase tracking-[0.5em] rounded-2xl hover:scale-[1.01] transition-all shadow-2xl flex items-center justify-center gap-3"
+                    >
+                      {isUploading ? <LoaderIcon size={18} className="animate-spin" /> : <SaveIcon size={18} />}
+                      GUARDAR DOCUMENTO ESTRUCTURADO
+                    </button>
+                 </div>
+               ) : (
+                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                   <div className="lg:col-span-1 space-y-6">
+                     <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#a51d36] mb-8">Gestión de Contenidos</h3>
+                     
+                     <div 
+                      onClick={() => setShowEditor(true)}
+                      className="group border-2 border-[#a51d36]/20 rounded-[2.5rem] p-10 flex flex-col items-center justify-center gap-6 cursor-pointer hover:bg-[#a51d36]/5 hover:border-[#a51d36] transition-all"
+                     >
+                        <div className="p-6 bg-[#a51d36]/10 rounded-full group-hover:scale-110 transition-transform">
+                          <LayersIcon size={32} className="text-[#a51d36]"/>
+                        </div>
+                        <span className="text-[10px] font-black uppercase text-white tracking-[0.4em] text-center">NUEVO DOC CON SECCIONES</span>
+                     </div>
+
+                     <div 
+                      onClick={() => !isUploading && fileInputRef.current?.click()} 
+                      className={`group border-2 border-dashed border-white/5 rounded-[2.5rem] p-10 flex flex-col items-center justify-center gap-6 transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-white/[0.02] hover:border-white/20'}`}
+                     >
+                        <div className="p-6 bg-white/5 rounded-full group-hover:scale-110 transition-transform">
+                          {isUploading ? <LoaderIcon size={32} className="text-[#a51d36] animate-spin" /> : <UploadIcon size={32} className="text-gray-700"/>}
+                        </div>
+                        <span className="text-[10px] font-black uppercase text-gray-600 tracking-[0.4em] text-center">IMPORTAR PDF RÁPIDO</span>
+                     </div>
+                     <input ref={fileInputRef} type="file" multiple className="hidden" accept=".pdf,.txt" onChange={handleFileUpload} />
                    </div>
-                   <input ref={fileInputRef} type="file" multiple className="hidden" accept=".pdf,.txt" onChange={handleFileUpload} />
-                   
-                   <div className="p-8 bg-white/5 rounded-[2rem] border border-white/5">
-                     <p className="text-[10px] font-black text-gray-500 uppercase mb-4 tracking-widest">Estado de la Nube</p>
-                     <div className="space-y-3">
-                       <div className="flex justify-between items-center text-xs">
-                         <span className="text-gray-400">Documentos Cloud:</span>
-                         <span className="text-white font-bold">{cloudDocs.length}</span>
+
+                   <div className="lg:col-span-2 space-y-6">
+                     <div className="flex items-center justify-between mb-8">
+                       <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#a51d36]">Fuentes Cloud ({cloudDocs.length})</h3>
+                       <div className="relative">
+                         <SearchIcon size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                         <input 
+                           type="text" 
+                           placeholder="BUSCAR..." 
+                           className="bg-white/5 border border-white/5 rounded-full py-2 pl-12 pr-6 text-[10px] font-bold focus:outline-none focus:border-[#a51d36]/50 transition-all w-64 uppercase tracking-widest"
+                           value={searchLibrary}
+                           onChange={e => setSearchLibrary(e.target.value)}
+                         />
                        </div>
-                       <div className="w-full h-1 bg-white/5 rounded-full mt-4">
-                         <div className="w-full h-full bg-[#a51d36] rounded-full"></div>
-                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[600px] overflow-y-auto pr-4 custom-scrollbar">
+                       {filteredLibrary.map((doc) => (
+                         <div key={doc.id} className="p-6 bg-white/[0.03] border border-white/5 rounded-2xl hover:bg-white/[0.05] transition-all group relative overflow-hidden">
+                           <div className="absolute top-0 left-0 w-1 h-full bg-transparent group-hover:bg-[#a51d36] transition-all"></div>
+                           <div className="flex items-start gap-4">
+                             <div className="mt-1 p-2 bg-black/40 rounded-lg text-gray-600">
+                               {doc.sections && doc.sections.length > 0 ? <LayersIcon size={16} className="text-[#f9c80e]" /> : <BookIcon size={16} />}
+                             </div>
+                             <div className="flex-1">
+                               <p className="text-[11px] font-black text-white leading-tight uppercase tracking-tight line-clamp-2">{doc.name}</p>
+                               {doc.sections && doc.sections.length > 0 ? (
+                                 <p className="text-[8px] text-[#f9c80e] mt-1 font-black uppercase tracking-widest">{doc.sections.length} SECCIONES</p>
+                               ) : (
+                                 <p className="text-[8px] text-gray-500 mt-1 font-black uppercase tracking-widest">TEXTO PLANO</p>
+                               )}
+                             </div>
+                           </div>
+                           <div className="mt-4 flex items-center justify-between">
+                              <span className="text-[8px] px-2 py-1 bg-white/5 rounded-md text-gray-500 font-bold uppercase tracking-tighter italic">Cloud v2.5</span>
+                              <button className="text-[9px] font-black text-[#a51d36] uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">Ver Contenido</button>
+                           </div>
+                         </div>
+                       ))}
                      </div>
                    </div>
                  </div>
-
-                 <div className="lg:col-span-2 space-y-6">
-                   <div className="flex items-center justify-between mb-8">
-                     <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#a51d36]">Fuentes Cloud</h3>
-                     <div className="relative">
-                       <SearchIcon size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
-                       <input 
-                         type="text" 
-                         placeholder="BUSCAR EN NUBE..." 
-                         className="bg-white/5 border border-white/5 rounded-full py-2 pl-12 pr-6 text-[10px] font-bold focus:outline-none focus:border-[#a51d36]/50 transition-all w-64"
-                         value={searchLibrary}
-                         onChange={e => setSearchLibrary(e.target.value)}
-                       />
-                     </div>
-                   </div>
-
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[600px] overflow-y-auto pr-4 custom-scrollbar">
-                     {filteredLibrary.length > 0 ? filteredLibrary.map((doc) => (
-                       <div key={doc.id} className="p-6 bg-white/[0.03] border border-white/5 rounded-2xl hover:bg-white/[0.05] transition-all group relative overflow-hidden">
-                         <div className="absolute top-0 left-0 w-1 h-full bg-transparent group-hover:bg-[#a51d36] transition-all"></div>
-                         <div className="flex items-start gap-4">
-                           <div className="mt-1 p-2 bg-black/40 rounded-lg text-gray-600">
-                             <BookIcon size={16} />
-                           </div>
-                           <div className="flex-1">
-                             <p className="text-[11px] font-black text-white leading-tight uppercase tracking-tight line-clamp-2">{doc.name}</p>
-                             <p className="text-[9px] text-gray-600 mt-2 font-bold uppercase tracking-widest">ID: {doc.id}</p>
-                           </div>
-                         </div>
-                         <div className="mt-4 flex items-center justify-between">
-                            <span className="text-[8px] px-2 py-1 bg-white/5 rounded-md text-gray-500 font-bold uppercase">Cloud v1.0</span>
-                            <button className="text-[9px] font-black text-[#a51d36] uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">Ver Contenido</button>
-                         </div>
-                       </div>
-                     )) : (
-                       <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-800 gap-4 opacity-50">
-                         <BookIcon size={48} />
-                         <p className="text-[10px] font-black uppercase tracking-widest text-center">No hay documentos en la nube.<br/>Usa el botón de importar para comenzar.</p>
-                       </div>
-                     )}
-                   </div>
-                 </div>
-               </div>
+               )}
             </div>
           </div>
         )}
